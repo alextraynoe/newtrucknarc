@@ -1,0 +1,2826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRUCKNARC</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --panel:#ffffff; --panel2:#f0f3f8; --border:#e2e7f0; --border2:#cdd6e4;
+    --blue:#3d7cc9; --blue2:#2c67b0; --blue-soft:#e8f1fb;
+    --orange:#ff8c42; --orange2:#ff6b35; --orange-soft:#fff1e8;
+    --text:#1f2733; --dim:#5b6779; --dim2:#8b95a7;
+    --success:#218a4c; --danger:#c0392b; --warn:#b07d1d; --purple:#6b4fbb;
+    --radius:12px;
+    --shadow:0 1px 2px rgba(20,32,55,.05), 0 4px 14px rgba(20,32,55,.06);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    min-height:100vh; font-size:14px; -webkit-font-smoothing:antialiased;
+  }
+  #app{max-width:1440px; margin:0 auto; padding:16px 20px 60px;}
+
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 24px; border-radius:var(--radius); margin-bottom:14px;
+    background:linear-gradient(120deg, var(--orange2) 0%, var(--orange) 32%, var(--blue) 100%);
+    box-shadow:0 6px 20px rgba(40,70,120,.22);
+  }
+  header .title{display:flex; align-items:center; gap:10px;}
+  header h1{font-size:1.45em; color:#fff; text-shadow:1px 1px 3px rgba(0,0,0,.25); letter-spacing:.03em;}
+  header .sub{font-size:.78em; color:rgba(255,255,255,.9); margin-top:3px;}
+  header .actions{display:flex; gap:8px;}
+  .icon-btn{
+    width:38px; height:38px; border-radius:9px; border:none; cursor:pointer;
+    background:rgba(255,255,255,.22); color:#fff; font-size:1.05em;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s;
+  }
+  .icon-btn:hover{background:rgba(255,255,255,.38);}
+
+  .status-line{font-size:.75em; color:var(--dim2); margin:-4px 0 12px 2px; display:flex; gap:14px; flex-wrap:wrap;}
+
+  .tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  .tab-btn{
+    padding:10px 18px; border:1px solid var(--border2); background:var(--panel);
+    color:var(--dim); border-radius:9px; font-weight:600; font-size:.85em;
+    cursor:pointer; transition:all .15s; letter-spacing:.02em;
+  }
+  .tab-btn:hover{color:var(--text); border-color:var(--blue);}
+  .tab-btn.active{
+    background:linear-gradient(120deg, var(--orange) 0%, var(--orange2) 100%);
+    color:#fff; border-color:transparent; box-shadow:0 3px 10px rgba(255,107,53,.35);
+  }
+  .tab-btn .pip{
+    display:inline-block; min-width:18px; padding:1px 5px; margin-left:6px; border-radius:10px;
+    background:var(--blue); color:#fff; font-size:.8em; text-align:center;
+  }
+  .tab-btn.active .pip{background:rgba(255,255,255,.3);}
+
+  .tab-content{display:none;}
+  .tab-content.active{display:block; animation:fadein .2s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;}
+  .stat-card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:14px 16px; box-shadow:var(--shadow);
+  }
+  .stat-card .label{font-size:.72em; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; font-weight:600;}
+  .stat-card .value{font-size:1.5em; font-weight:700;}
+  .stat-card .value.blue{color:var(--blue2);}
+  .stat-card .value.orange{color:var(--orange2);}
+  .stat-card .value.success{color:var(--success);}
+  .stat-card .value.danger{color:var(--danger);}
+  .stat-card .sub{font-size:.72em; color:var(--dim2); margin-top:4px;}
+
+  .panel{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px; margin-bottom:16px; box-shadow:var(--shadow);
+  }
+  .panel h2{font-size:1em; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+  .panel h2 .tag{font-size:.65em; font-weight:600; color:var(--dim); background:var(--panel2); padding:3px 9px; border-radius:20px;}
+  .panel .desc{font-size:.78em; color:var(--dim); margin:-6px 0 14px; line-height:1.5;}
+  .panel .note{font-size:.72em; color:var(--dim2); margin-top:8px;}
+  .legend{display:flex; gap:14px; flex-wrap:wrap; font-size:.72em; color:var(--dim); margin:-6px 0 14px;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:11px; height:11px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.12);}
+
+  .search-row{display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;}
+  input[type=text], input[type=search], input[type=date], select, input[type=password]{
+    background:#fff; border:1px solid var(--border2); color:var(--text);
+    padding:9px 12px; border-radius:8px; font-size:.85em; outline:none;
+  }
+  input[type=text]:focus, input[type=search]:focus, select:focus{border-color:var(--blue); box-shadow:0 0 0 3px rgba(61,124,201,.12);}
+  .search-row input[type=search]{flex:1; min-width:220px;}
+  .check-row{display:inline-flex; align-items:center; gap:6px; font-size:.8em; color:var(--dim); cursor:pointer; user-select:none; white-space:nowrap;}
+  .btn{
+    padding:9px 14px; border-radius:8px; border:none; cursor:pointer; font-weight:600; font-size:.82em;
+    background:linear-gradient(120deg, var(--blue), #5a9fe0); color:#fff;
+  }
+  .btn.orange{background:linear-gradient(120deg, var(--orange), var(--orange2));}
+  .btn.ghost{background:#fff; color:var(--text); border:1px solid var(--border2);}
+  .btn:active{transform:scale(.97);}
+
+  table{width:100%; border-collapse:collapse; font-size:.68em;}
+  th, td{padding:5px 8px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;}
+  th{color:var(--dim); font-weight:700; font-size:.78em; text-transform:uppercase; letter-spacing:.03em; cursor:pointer; user-select:none; background:var(--panel); position:sticky; top:0; z-index:2;}
+  th:hover{color:var(--text);}
+  .table-wrap{overflow-x:auto; max-height:560px; overflow-y:auto; border:1px solid var(--border); border-radius:9px;}
+
+  /* Whole-row status shading — exact colors from the original app, on a light background. */
+  tr.row-paid td{background:#d4edda;}
+  tr.row-requested td{background:#fff3cd;}
+  tr.row-disqualified td{background:#f8d7da;}
+  tr.row-dismissed td{background:#d9534f; color:#fff;}
+  tr.row-submitted td{background:#d4c5f9;}
+  tr.row-nohearing td{background:#d4e9ff;}
+  tr.row-paid:hover td{background:#c4e4cd;}
+  tr.row-requested:hover td{background:#f7e9b6;}
+  tr.row-disqualified:hover td{background:#f2c5c9;}
+  tr.row-dismissed:hover td{background:#c9443e;}
+  tr.row-submitted:hover td{background:#c6b3f5;}
+  tr.row-nohearing:hover td{background:#c1def8;}
+  tr.row-dismissed .badge, tr.row-dismissed .badge.dataset-at, tr.row-dismissed .badge.dataset-atnyc, tr.row-dismissed .badge.dataset-mbt{background:rgba(255,255,255,.25); color:#fff;}
+
+  .badge{padding:3px 9px; border-radius:20px; font-size:.72em; font-weight:700;}
+  .badge.paid{background:rgba(33,138,76,.16); color:var(--success);}
+  .badge.requested{background:rgba(176,125,29,.16); color:var(--warn);}
+  .badge.submitted{background:rgba(107,79,187,.16); color:var(--purple);}
+  .badge.dismissed{background:rgba(255,255,255,.3); color:#fff; border:1px solid rgba(255,255,255,.5);}
+  .badge.disq{background:rgba(192,57,43,.14); color:var(--danger);}
+  .badge.none{background:var(--panel2); color:var(--dim);}
+  .badge.dataset-at{background:rgba(61,124,201,.14); color:var(--blue2);}
+  .badge.dataset-atnyc{background:rgba(255,107,53,.14); color:var(--orange2);}
+  .badge.dataset-mbt{background:rgba(107,79,187,.14); color:var(--purple);}
+  .badge.chg-new{background:rgba(33,138,76,.16); color:var(--success);}
+  .badge.chg-hearing_status{background:rgba(61,124,201,.14); color:var(--blue2);}
+  .badge.chg-hearing_result{background:rgba(176,125,29,.16); color:var(--warn);}
+  .badge.chg-payment_amount{background:rgba(255,107,53,.16); color:var(--orange2);}
+
+  .empty{color:var(--dim2); font-size:.85em; padding:24px; text-align:center;}
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(24,34,52,.45); display:none;
+    align-items:center; justify-content:center; z-index:100; padding:20px;
+  }
+  .modal-overlay.open{display:flex;}
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
+    max-width:680px; width:100%; max-height:88vh; overflow-y:auto; padding:24px;
+    box-shadow:0 18px 50px rgba(20,32,55,.25);
+  }
+  .modal.wide{max-width:860px;}
+  .modal h3{margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;}
+  .modal .close-x{cursor:pointer; color:var(--dim); font-size:1.2em;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:.78em; color:var(--dim); margin-bottom:5px; font-weight:600;}
+  .field input{width:100%;}
+  .vendor-block{border:1px solid var(--border); border-radius:9px; padding:12px; margin-bottom:10px; background:var(--panel2);}
+  .vendor-block b{display:block; font-size:.8em; margin-bottom:8px; color:var(--blue2);}
+  .rules-modal p{margin-bottom:10px; font-size:.85em; line-height:1.55; color:var(--text);}
+  .rules-modal h4{font-size:.85em; margin:16px 0 6px; color:var(--orange2);}
+  .rules-modal ul{margin:6px 0 10px 18px; font-size:.85em; line-height:1.6; color:var(--text);}
+
+  /* Export for Email modal */
+  .export-group{border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:16px; background:#fbfcfe;}
+  .export-group > b{display:block; margin-bottom:10px; font-size:.95em;}
+  .copy-block{margin-bottom:12px;}
+  .copy-block .cb-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;}
+  .copy-block .cb-head span{font-size:.76em; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.04em;}
+  .copy-block textarea{
+    width:100%; background:#fff; border:1px solid var(--border2); border-radius:8px;
+    padding:9px 11px; font-size:.8em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--text); resize:vertical; min-height:38px;
+  }
+  .copy-btn{padding:5px 11px; font-size:.75em;}
+
+  /* Changes tracker */
+  .chg-item{
+    display:flex; gap:12px; align-items:flex-start; padding:10px 4px;
+    border-bottom:1px solid var(--border); font-size:.83em;
+  }
+  .chg-item .when{color:var(--dim2); font-size:.85em; min-width:135px;}
+  .chg-item .what{flex:1; line-height:1.5;}
+  .chg-item .delta{color:var(--dim); font-size:.9em;}
+  .chg-item .delta b{color:var(--text);}
+
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+  .cal-cell{
+    background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    padding:8px; min-height:70px; font-size:.75em;
+  }
+  .cal-cell .d{color:var(--dim); font-weight:700; margin-bottom:4px;}
+  .cal-cell .hrs{color:var(--blue2); font-weight:700;}
+  .cal-cell .rate{color:var(--orange2); font-weight:700;}
+  .cal-cell.empty-day{opacity:.35;}
+  .cal-head{color:var(--dim); font-size:.7em; text-transform:uppercase; text-align:center; padding-bottom:4px; font-weight:700;}
+
+  .est{color:var(--dim2); font-style:italic;}
+  .est.overdue{color:var(--danger); font-style:italic; font-weight:600;}
+
+  .badge.chg-summons_assigned{background:rgba(107,79,187,.16); color:var(--purple);}
+
+  /* stats charts */
+  .hb{display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:.8em;}
+  .hb-label{width:190px; min-width:120px; text-align:right; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .hb-track{flex:1; background:var(--panel2); border-radius:6px; height:16px; overflow:hidden;}
+  .hb-fill{height:100%; border-radius:6px; min-width:2px;}
+  .hb-val{width:170px; font-weight:600; color:var(--text); font-size:.95em;}
+  .stack{display:flex; height:22px; border-radius:6px; overflow:hidden; margin:6px 0 4px; background:var(--panel2);}
+  .stack div{height:100%;}
+  .stack-legend{font-size:.75em; color:var(--dim); margin-bottom:14px; line-height:1.6;}
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:1000px){ .two-col{grid-template-columns:1fr;} }
+
+  /* calendar */
+  .cal-cell[data-day]{cursor:pointer; transition:box-shadow .12s;}
+  .cal-cell[data-day]:hover{box-shadow:0 0 0 2px var(--blue);}
+  .cal-cell.selected{box-shadow:0 0 0 2px var(--orange2);}
+  .cal-cell .cnt{font-size:1.3em; font-weight:800; color:var(--text); line-height:1.1;}
+  .cal-cell .sub2{color:var(--dim); font-size:.92em; margin-top:2px;}
+  .weekday-avg{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-top:10px; font-size:.72em; color:var(--dim); text-align:center;}
+  .weekday-avg b{color:var(--blue2); display:block; font-size:1.15em;}
+  .wx{font-size:.8em; font-weight:400; color:var(--dim2); margin-left:3px;}
+  #cal-map{height:340px; border-radius:10px; margin:10px 0 14px; border:1px solid var(--border); z-index:1;}
+  .map-pin{background:var(--blue); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35);}
+  .cal-drill{margin-top:14px; border-top:1px solid var(--border); padding-top:10px;}
+  .cal-drill h3{font-size:.9em; margin-bottom:8px;}
+  .cal-drill .chg-item .when{min-width:70px;}
+
+  .chart-scroll{max-height:360px; overflow-y:auto; padding-right:6px;}
+  .dual{display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:.8em;}
+  .dual .hb-label{width:190px; min-width:120px; text-align:right; color:var(--dim);}
+  .dual .bars{flex:1; display:flex; flex-direction:column; gap:3px;}
+  .dual .bars i{display:block; height:9px; border-radius:4px; min-width:2px;}
+  .dual .bars i.g{background:var(--success);}
+  .dual .bars i.y{background:#e0aa2e;}
+  .dual .hb-val{width:220px;}
+  .linechart{width:100%; height:auto; display:block;}
+  .linechart polyline{fill:none; stroke:var(--blue); stroke-width:2.5;}
+  .linechart circle{fill:var(--blue);}
+  .linechart text{font-size:11px; fill:var(--dim);}
+  .linechart line.gridline{stroke:var(--border); stroke-width:1;}
+  .vbars{display:flex; align-items:flex-end; gap:9px; overflow-x:auto; padding:10px 4px 4px;}
+  .vb-month{display:flex; flex-direction:column; align-items:center; gap:5px; min-width:32px;}
+  .vb-pair{display:flex; align-items:flex-end; gap:3px; height:180px;}
+  .vb-pair i{display:block; width:11px; border-radius:3px 3px 0 0; min-height:2px;}
+  .vb-pair i.g{background:var(--success);}
+  .vb-pair i.y{background:#e0aa2e;}
+  .vb-label{font-size:.62em; color:var(--dim); white-space:nowrap; writing-mode:vertical-rl; transform:rotate(180deg); height:46px;}
+
+  @media (max-width:900px){
+    .grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));}
+    header{flex-direction:column; align-items:flex-start; gap:10px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="title">
+      <div>
+        <h1>🚚 TRUCKNARC</h1>
+        <div class="sub">Citizen Air Complaint payout tracker — AT · AT NYC · MBT</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="icon-btn" id="btn-rules" title="How this works">ℹ️</button>
+      <button class="icon-btn" id="btn-settings" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <div class="status-line" id="status-line" style="align-items:center;">
+    <span id="status-text">Loading cached data…</span>
+    <button class="btn ghost" id="btn-refresh" style="padding:3px 10px; font-size:.95em;">↻ Refresh</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn" data-tab="newmoney">New Money</button>
+    <button class="tab-btn" data-tab="calendar">Calendar</button>
+    <button class="tab-btn" data-tab="stats">Stats</button>
+    <button class="tab-btn" data-tab="changes">Changes<span class="pip" id="changes-pip" style="display:none;">0</span></button>
+  </div>
+
+  <!-- HOME -->
+  <section class="tab-content active" id="tab-home">
+    <div class="grid" id="home-stats"></div>
+    <div class="panel">
+      <h2>All Complaints <span class="tag" id="home-count">0 records</span></h2>
+      <p class="desc">Merged across AT, AT NYC and MBT, sorted by submission date (most recent first). Disqualified and dismissed complaints always remain visible and counted.</p>
+      <div class="legend">
+        <span><i style="background:#d4edda;"></i> Paid</span>
+        <span><i style="background:#fff3cd;"></i> Requested</span>
+        <span><i style="background:#d4c5f9;"></i> Submitted (not yet reviewed)</span>
+        <span><i style="background:#d4e9ff;"></i> No hearing date yet</span>
+        <span><i style="background:#f8d7da;"></i> Disqualified</span>
+        <span><i style="background:#d9534f;"></i> Dismissed</span>
+      </div>
+      <div class="search-row">
+        <input type="search" id="home-search" placeholder="Search company, summons #, complaint #, plate, location, description…">
+        <select id="home-filter-dataset">
+          <option value="">All datasets</option>
+          <option value="AT">AT</option>
+          <option value="AT NYC">AT NYC</option>
+          <option value="MBT">MBT</option>
+        </select>
+        <select id="home-filter-status">
+          <option value="">All statuses</option>
+          <option value="paid">Paid</option>
+          <option value="requested">Requested</option>
+          <option value="submitted">Submitted</option>
+          <option value="dismissed">Dismissed</option>
+          <option value="disqualified">Disqualified</option>
+          <option value="none">No status tag</option>
+        </select>
+        <label class="check-row"><input type="checkbox" id="home-expand"> Show extra columns</label>
+      </div>
+      <div class="table-wrap"><table id="home-table">
+        <thead></thead>
+        <tbody></tbody>
+      </table></div>
+      <div class="note" id="home-truncate-note"></div>
+    </div>
+  </section>
+
+  <!-- NEW MONEY -->
+  <section class="tab-content" id="tab-newmoney">
+    <div class="grid" id="newmoney-stats"></div>
+    <div class="panel">
+      <h2>New Money
+        <span style="display:flex; gap:8px; align-items:center;">
+          <button class="btn orange" id="btn-export-email">📧 Export for Email (Groups of 8)</button>
+          <span class="tag">Paid by NYC, not yet requested/collected</span>
+        </span>
+      </h2>
+      <p class="desc">NYC's records show these as paid in full, but there's no matching entry in your Paid/Requested log yet — money sitting there unclaimed.</p>
+      <div class="table-wrap"><table id="newmoney-table">
+        <thead><tr><th>Dataset</th><th>Summons #</th><th>Complaint #</th><th>Company</th><th>Paid Amt</th><th>My Payout</th><th>Hearing Date</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Requested but Not Yet Paid <span class="tag" id="pendreq-tag">Sorted by longest wait first</span></h2>
+      <p class="desc">Estimated arrival based on how long your <b>recent</b> paid requests took (the lag has drifted a lot over time, so only the latest requests are used).</p>
+      <div class="table-wrap"><table id="pending-req-table">
+        <thead><tr><th>Dataset</th><th>Summons #</th><th>Company</th><th>Requested</th><th>Expected Amt</th><th>Days Waiting</th><th>Forecasted Payment</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <h2>Paid, But Not "Paid in Full" <span class="tag" id="disc-count">0 flagged</span></h2>
+      <p class="desc">These show a paid amount, but NYC's hearing status doesn't say Paid in Full, and they're not in your Paid or Requested logs — worth double-checking.</p>
+      <div class="table-wrap"><table id="disc-table">
+        <thead><tr><th>Dataset</th><th>Summons #</th><th>Company</th><th>Paid Amt</th><th>Hearing Status</th><th>Compliance Status</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- CALENDAR -->
+  <section class="tab-content" id="tab-calendar">
+    <div class="grid" id="cal-stats"></div>
+    <div class="panel">
+      <h2>Hours Worked &amp; Hourly Rate <span class="tag" id="cal-label">This month</span></h2>
+      <p class="desc">Days are bucketed by when incidents actually <b>occurred</b> (the video clip's From timestamp). Hours come from clustering the real From/To spans (a 2.5hr+ gap starts a new shift, padded 30min each side). Cell color runs red → green as the day's received money approaches its estimate. Click a day for totals and details.</p>
+      <div class="search-row">
+        <button class="btn ghost" id="cal-prev">←</button>
+        <select id="cal-month"></select>
+        <select id="cal-year"></select>
+        <button class="btn ghost" id="cal-next">→</button>
+        <button class="btn ghost" id="cal-today">Today</button>
+        <select id="cal-filter-dataset">
+          <option value="">All datasets</option>
+          <option value="AT">AT</option>
+          <option value="AT NYC">AT NYC</option>
+          <option value="MBT">MBT</option>
+        </select>
+      </div>
+      <div class="cal-grid" id="cal-heads"></div>
+      <div class="cal-grid" id="cal-grid" style="margin-top:6px;"></div>
+      <div class="weekday-avg" id="cal-weekday-avg"></div>
+      <div class="cal-drill" id="cal-drill" style="display:none;"></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section class="tab-content" id="tab-stats">
+    <div class="panel">
+      <h2>Success Funnel <span class="tag">Where every filing ends up</span></h2>
+      <div id="stats-funnel"></div>
+    </div>
+    <div class="panel">
+      <h2>Cohort Funnel by Incident Month <span class="tag">is quality improving?</span></h2>
+      <p class="desc">Each incident month's filings and where they've ended up so far. Recent months are naturally mostly "open".</p>
+      <div class="chart-scroll" id="stats-cohorts"></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Collected by Month <span class="tag">paid + pending, by incident month</span></h2>
+        <p class="desc">Everything each month's incidents have produced or have in the pipeline: actual payments received plus expected amounts on requested rows.</p>
+        <div class="chart-scroll" id="stats-revenue"></div>
+      </div>
+      <div class="panel">
+        <h2>Incident Volume by Month <span class="tag">when violations occurred</span></h2>
+        <div class="chart-scroll" id="stats-volume"></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Top Days <span class="tag">most incidents in a single day</span></h2>
+        <div id="stats-topdays"></div>
+      </div>
+      <div class="panel">
+        <h2>Top Weeks <span class="tag">Sun–Sat periods</span></h2>
+        <div id="stats-topweeks"></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Top 10 Hour Blocks <span class="tag">busiest single clock-hours ever</span></h2>
+        <p class="desc">On-the-hour blocks; an incident counts in every hour its From–To span touches, even by a second.</p>
+        <div id="stats-hourblocks"></div>
+      </div>
+      <div class="panel">
+        <h2>Boroughs <span class="tag">from master data</span></h2>
+        <div id="stats-boroughs"></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Offense Tiers <span class="tag">1st / 2nd / 3rd</span></h2>
+        <div id="stats-offense"></div>
+      </div>
+      <div class="panel">
+        <h2>School / Park Adjacency <span class="tag">from master data</span></h2>
+        <div id="stats-school"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Who Owes You <span class="tag">open money only — requested excluded</span></h2>
+      <p class="desc">Survival-weighted OPEN rows per canonical company. Requested money isn't listed here — it's already as good as yours.</p>
+      <div id="stats-whoowes"></div>
+    </div>
+    <div class="panel">
+      <h2>Disqualification / Dismissal Reasons <span class="tag" id="stats-disq-tag">ranked</span></h2>
+      <div id="stats-disq"></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Top Companies by Payout <span class="tag">canonical names</span></h2>
+        <div id="stats-top-payout"></div>
+      </div>
+      <div class="panel">
+        <h2>Top Companies by Volume <span class="tag">canonical names</span></h2>
+        <div id="stats-top-volume"></div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Top 8 Schools / Parks <span class="tag">standardized names</span></h2>
+        <div id="stats-topplaces"></div>
+      </div>
+      <div class="panel">
+        <h2>Request → Paid Lag Over Time <span class="tag">avg days, by request month</span></h2>
+        <div id="stats-paylag"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Submission → Hearing Lag Over Time <span class="tag">avg days, by submission month — how backed up DEP/OATH is</span></h2>
+      <div id="stats-hearlag"></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Incidents by Day of Week <span class="tag">incident time</span></h2>
+        <div id="stats-dow"></div>
+      </div>
+      <div class="panel">
+        <h2>Incidents by Hour of Day <span class="tag">6 PM–5 AM lumped</span></h2>
+        <div id="stats-hour"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Summons Volume Over Time <span class="tag">summonsed complaints per incident month</span></h2>
+      <div id="stats-summonsline"></div>
+    </div>
+    <div class="panel">
+      <h2>Revenue Over Time <span class="tag">green = your 25% received · yellow = potential from balance due</span></h2>
+      <p class="desc">Yellow is the ceiling: your 25% share (capped at $250) if every currently-outstanding summons paid in full. Hover a month for exact figures.</p>
+      <div class="chart-scroll" id="stats-revovertime"></div>
+    </div>
+  </section>
+
+  <!-- CHANGES TRACKER -->
+  <section class="tab-content" id="tab-changes">
+    <div class="grid" id="changes-stats"></div>
+    <div class="panel">
+      <h2>Changes Tracker <span class="tag" id="changes-count">0 logged</span></h2>
+      <p class="desc">Every refresh compares the newly fetched + NYC-enriched snapshot against the previous one and logs: new complaints, hearing-status changes, hearing-result changes, and payment-amount changes.</p>
+      <div class="search-row">
+        <select id="changes-filter-type">
+          <option value="">All change types</option>
+          <option value="new">New complaints</option>
+          <option value="summons_assigned">Summons assigned</option>
+          <option value="hearing_status">Hearing status changes</option>
+          <option value="hearing_result">Hearing result changes</option>
+          <option value="payment_amount">Payment amount changes</option>
+        </select>
+        <button class="btn ghost" id="btn-clear-changes">Clear Change Log</button>
+      </div>
+      <div id="changes-list"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-overlay">
+  <div class="modal">
+    <h3>Settings <span class="close-x" data-close="settings-overlay">✕</span></h3>
+    <div class="field">
+      <label>Published Sheet ID (the long e/2PACX-... part of your published sheet URL)</label>
+      <input type="text" id="cfg-pubid">
+    </div>
+    <div class="field">
+      <label>Sheet tab GIDs (ATNYC / AT / MBT / Requested / Paid)</label>
+      <input type="text" id="cfg-gid-atnyc" placeholder="ATNYC gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-at" placeholder="AT gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-mbt" placeholder="MBT gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-requested" placeholder="Requested gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-paid" placeholder="Paid gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-disqreasons" placeholder="Disqualification Reasons gid">
+    </div>
+    <div class="field">
+      <label>Vendor info per identity (used by Export for Email; kept locally)</label>
+      <div class="vendor-block"><b>AT</b>
+        <input type="text" id="cfg-at-code" placeholder="Vendor code" style="margin-bottom:6px;">
+        <input type="text" id="cfg-at-name" placeholder="Vendor name" style="margin-bottom:6px;">
+        <input type="text" id="cfg-at-address" placeholder="Mailing address">
+      </div>
+      <div class="vendor-block"><b>AT NYC</b>
+        <input type="text" id="cfg-atnyc-code" placeholder="Vendor code" style="margin-bottom:6px;">
+        <input type="text" id="cfg-atnyc-name" placeholder="Vendor name" style="margin-bottom:6px;">
+        <input type="text" id="cfg-atnyc-address" placeholder="Mailing address">
+      </div>
+      <div class="vendor-block"><b>MBT</b>
+        <input type="text" id="cfg-mbt-code" placeholder="Vendor code" style="margin-bottom:6px;">
+        <input type="text" id="cfg-mbt-name" placeholder="Vendor name" style="margin-bottom:6px;">
+        <input type="text" id="cfg-mbt-address" placeholder="Mailing address">
+      </div>
+    </div>
+    <div class="field">
+      <label>NYC OATH Open Data enrichment</label>
+      <select id="cfg-enrich" style="width:100%;">
+        <option value="on">On — always re-check live NYC data for status changes</option>
+        <option value="off">Off — use sheet data only</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:16px;">
+      <button class="btn orange" id="btn-save-settings">Save &amp; Refresh</button>
+      <button class="btn ghost" id="btn-clear-cache">Clear Cached Data</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT FOR EMAIL MODAL -->
+<div class="modal-overlay" id="export-overlay">
+  <div class="modal wide">
+    <h3>📧 Export Summons for Email <span class="close-x" data-close="export-overlay">✕</span></h3>
+    <p class="desc" style="margin-bottom:14px;">Only rows whose NYC hearing status is <b>exactly</b> "Paid in Full" and that aren't in your Requested/Paid logs are included, split into groups of 8 per identity.</p>
+    <div id="export-body"></div>
+  </div>
+</div>
+
+<!-- RULES MODAL -->
+<div class="modal-overlay" id="rules-overlay">
+  <div class="modal rules-modal">
+    <h3>How This App Works <span class="close-x" data-close="rules-overlay">✕</span></h3>
+
+    <h4>Where the data comes from</h4>
+    <p>One published Google Sheet holds five tabs: <b>ATNYC</b>, <b>AT</b>, and <b>MBT</b> (per-identity master logs of filed complaints), plus shared <b>Requested</b> and <b>Paid</b> tabs that both carry a <code>Dataset</code> column (spelled inconsistently across tabs — "ATNYC" vs "AT NYC" — so this app normalizes spacing/case before matching).</p>
+
+    <h4>Why the app still enriches live from NYC, even though the sheet already has some OATH fields</h4>
+    <ul>
+      <li>The sheet's snapshot can go stale — a case can flip from DEFAULTED to PAID IN FULL after the sheet was last refreshed. The app re-checks NYC's public OATH data for every summons number and overwrites the cached record when something changed.</li>
+      <li>Any difference it finds versus the previous snapshot gets logged in the <b>Changes</b> tab — new complaints, hearing-status changes, hearing-result changes, payment-amount changes.</li>
+    </ul>
+
+    <h4>How records get merged</h4>
+    <p>Within each identity, rows are joined by <b>Summons Number</b>: master record + matching Paid/Requested entry (filtered to that identity via the Dataset column) + live NYC enrichment. The Home tab then merges all three identities into one sorted, searchable list.</p>
+
+    <h4>Home tab status logic (exact rules from the original app, in priority order)</h4>
+    <ul>
+      <li>If the complaint's Status field literally says <b>"Submitted"</b>, it's tagged Submitted (purple) — and this blocks the Paid/Requested tags from applying.</li>
+      <li>Otherwise a match in the Paid log makes it <b>Paid</b> (green); else a match in the Requested log makes it <b>Requested</b> (yellow).</li>
+      <li>Then, overriding all of the above: a Hearing Result containing <b>"dismissed"</b> forces <b>Dismissed</b> (dark red, white text); else a Status containing <b>"disqualified"</b> forces <b>Disqualified</b> (red).</li>
+      <li>Finally, at render time: if there's <b>no Hearing Date</b> and the row isn't Disqualified/Dismissed/Submitted, it displays light blue regardless of the above — "no hearing scheduled yet" takes visual precedence over payment status.</li>
+      <li>So the real priority order is: dismissed &gt; disqualified &gt; submitted &gt; paid &gt; requested. Disqualified and dismissed complaints always remain visible and counted.</li>
+    </ul>
+
+    <h4>The payout rule</h4>
+    <p>Normally you receive 25% of what NYC collects. <b>But if the paid/violation amount is over $1,000, the payout is capped at a flat $250</b> — this app applies that cap everywhere a payout is estimated or forecasted. Actual historical payouts on already-paid rows always come straight from your "Paid To Me" column, never the formula.</p>
+
+    <h4>The Home stat cards</h4>
+    <ul>
+      <li><b>Pending Amount</b> — expected payout summed across everything currently in Requested status (asked for, not yet received). Rows with no dollar amount on file assume the standard $87.50.</li>
+      <li><b>Paid + Pending</b> — money in hand plus money actively in the pipeline.</li>
+      <li><b>Estimated Grand Total</b> — money received, plus confirmed pending, plus every open complaint weighted by your real win rate and faded by age against your current conversion pace. A realistic forecast, not a ceiling.</li>
+    </ul>
+
+    <h4>Complaints without a summons yet</h4>
+    <p>Filings DEP hasn't converted into summonses yet (blank Summons Number) are <b>kept and counted</b> — they display light blue with no payout, and they can't match the Paid/Requested logs or NYC data until a summons exists. When one is assigned, the Changes tab logs it as a "Summons Assigned" event.</p>
+
+    <h4>Forecasts use recent data only</h4>
+    <p>Both lags — request→paid and submission→hearing — have gotten dramatically worse over time, so lifetime averages would lowball reality. Forecasted payment dates use the average of your <b>last 20</b> paid requests; estimated hearing dates (shown in italics for rows with no hearing yet, or as "overdue ~Xd" once the estimate has passed) use your last 50 submission→hearing gaps. Estimates are display-only and never feed the revenue math.</p>
+
+    <h4>How Hours Worked / Hourly Rate is calculated</h4>
+    <p>There's no real clock-in data, so hours are inferred from the times you submitted complaints: a gap of 2.5 hours or more between two submissions starts a new "shift." Each shift is padded 30 minutes on either end. Hourly rate = that day's payout earned ÷ that day's inferred hours.</p>
+
+    <h4>Offense tiers</h4>
+    <p>The Description column is scanned for "2nd offense" / "second offense" / "3rd offense" etc. Repeat offenses raise the fine ($350 / $450 / $600), and all expected-payout estimates use the right tier. First offense is assumed when nothing is mentioned.</p>
+
+    <h4>Incident time, not submission time</h4>
+    <p>The calendar and all Stats group by when the violation actually <b>occurred</b> (the clip's From timestamp), falling back to the submission date for old rows without one. The estimated-hearing-date model only trusts months where a majority of filings have actually been reviewed — the few early returns from a mostly-unreviewed month are biased fast and are ignored.</p>
+
+    <h4>The grand formula (what every row is worth)</h4>
+    <ul>
+      <li><b>Paid</b> — actual dollars received.</li>
+      <li><b>Requested / NYC shows Paid in Full</b> — full base payout. Confirmed money.</li>
+      <li><b>Defaulted</b> — a finding of violation exists; collection is roughly a coin-flip, so base × 0.5.</li>
+      <li><b>Hearing scheduled</b> — demonstrably moving, so no age fade: base × your lifetime win rate W.</li>
+      <li><b>Open (waiting)</b> — base × W × T(age), where T is your own conversion-tail curve, time-warped to today's slower pace: a 300-day-old row in a 2×-slower era is only "150 days along" and keeps most of its value, while a 2023 zombie is past the tail and fades to $0.</li>
+      <li><b>Disqualified / dismissed</b> — $0.</li>
+    </ul>
+    <p>W is measured lifetime-only on purpose: disqualifications resolve fast and wins resolve slow, so a "recent-only" win rate would be biased low. Hover the Estimated Grand Total card for the live per-category breakdown; the console logs it on every refresh.</p>
+
+    <h4>Disqualification reasons</h4>
+    <p>A sixth sheet tab maps Complaint Number → the specific disqualification reason (joined by complaint number, since disqualified filings never get a summons). Disqualified rows show the real reason wherever it appears.</p>
+
+    <h4>Company names</h4>
+    <p>A ~130-entry lookup table maps known messy spellings ("CONSOLIDATED EDISON COMPANY OF NY INC.", "CONED", …) to one canonical name, so search finds all variants of the same real company. The table displays the name exactly as filed; searching matches both the raw and the canonical name.</p>
+  </div>
+</div>
+
+<script>
+/* ============================== CONFIG ============================== */
+const DEFAULTS = {
+  pubId: '2PACX-1vRfzJsYWK-rLLGVKG5QR249r38fXhtEHQwZgmQM3TPVVstajGc6jI8eNs6QjxqsripL9-ett4T27BWa',
+  gids: {
+    atnyc: '161715193',
+    at: '1809279047',
+    mbt: '1576428771',
+    requested: '879915234',
+    paid: '1900607470',
+    disqreasons: '476493654'
+  },
+  vendors: {
+    at:    { code:'VS00083313', name:'Alexander Traynor',       address:'374 Monaco Ln, Glastonbury, CT 06033' },
+    atnyc: { code:'VS00083313', name:'Alexander Traynor',       address:'374 Monaco Ln, Glastonbury, CT 06033' },
+    mbt:   { code:'VS00099981', name:'Mary Beth Brown-Traynor', address:'97 Ledgewood Dr, Glastonbury, CT 06033' }
+  },
+  enrich: 'on'
+};
+const LS_CFG = 'truckNarcSettings';
+const LS_DATA = 'truckNarcData';
+const LS_CFG_OLD = 'cacpTrackerSettings'; // migrated on first run, then left alone
+
+function loadConfig(){
+  try{
+    let saved = JSON.parse(localStorage.getItem(LS_CFG) || 'null');
+    if(!saved){
+      // one-time migration from the pre-rename settings key (sheet IDs + enrich toggle carry over)
+      const old = JSON.parse(localStorage.getItem(LS_CFG_OLD) || 'null');
+      if(old) saved = { pubId: old.pubId, gids: old.gids, enrich: old.enrich };
+    }
+    if(!saved) return JSON.parse(JSON.stringify(DEFAULTS));
+    return {
+      pubId: saved.pubId || DEFAULTS.pubId,
+      gids: Object.assign({}, DEFAULTS.gids, saved.gids || {}),
+      vendors: {
+        at:    Object.assign({}, DEFAULTS.vendors.at,    (saved.vendors||{}).at    || {}),
+        atnyc: Object.assign({}, DEFAULTS.vendors.atnyc, (saved.vendors||{}).atnyc || {}),
+        mbt:   Object.assign({}, DEFAULTS.vendors.mbt,   (saved.vendors||{}).mbt   || {})
+      },
+      enrich: saved.enrich || DEFAULTS.enrich
+    };
+  }catch(e){ return JSON.parse(JSON.stringify(DEFAULTS)); }
+}
+function saveConfig(cfg){ localStorage.setItem(LS_CFG, JSON.stringify(cfg)); }
+
+let CFG = loadConfig();
+
+/* ============================== COMPANY NAME STANDARDIZATION ============================== */
+/* Recovered verbatim from the earlier version of this app — maps every known messy
+   spelling variant to one canonical name so company-level views/search don't fragment. */
+const companyNameMapping = {
+    'A&L CESSPOOL SERVICE CORP': 'AL CESSPOOL SERVICE',
+    'A.B.R. PLUMBING': 'ABR PLUMBING',
+    'AB ONE': 'AB ONE',
+    'ABBEY LOCKSMITHS': 'ABBEY LOCKSMITHS',
+    'ABBEY LOCKSMITHS INC.': 'ABBEY LOCKSMITHS',
+    'ABR PLUMBING': 'ABR PLUMBING',
+    'ACV ENVIRONMENTAL SERVICES INC': 'ACV ENVIRONMENTAL SERVICES',
+    'ADVANCE': 'ADVANCE',
+    'ADVANCED ELECTRONIC SOLUTIONS INC': 'ADVANCED ELECTRONIC SOLUTIONS',
+    'ADVANCED ELECTRONIC SOLUTIONS INC.': 'ADVANCED ELECTRONIC SOLUTIONS',
+    'AGILITY CABLE': 'AGILITY CABLE',
+    'AGILITY CABLE INC': 'AGILITY CABLE',
+    'AINSWORTH': 'AINSWORTH',
+    'AINSWORTH INC': 'AINSWORTH',
+    'ALL CITY METAL': 'ALL CITY METAL',
+    'ALL CITY METAL INC': 'ALL CITY METAL',
+    'ALLNET TECHNOLOGY SOLUTION CORP': 'ALLNET TECHNOLOGY SOLUTION',
+    'ALLNET TECHNOLOGY SOLUTION CORP.': 'ALLNET TECHNOLOGY SOLUTION',
+    'AMAZON LOGISTICS INC': 'AMAZON LOGISTICS',
+    'AMAZON LOGISTICS INC.': 'AMAZON LOGISTICS',
+    'AMERICOLD': 'AMERICOLD',
+    'AMERICOLD INC': 'AMERICOLD',
+    'BALDOR EXPRESS TRANSPORTATION CO': 'BALDOR EXPRESS TRANSPORTATION',
+    'BALDOR EXPRESS TRANSPORTATION CO LLC': 'BALDOR EXPRESS TRANSPORTATION',
+    'BARN RENTALS': 'BARN RENTALS',
+    'BELLA BUS CORP': 'BELLA BUS',
+    'BELLA BUS CORP.': 'BELLA BUS',
+    'BLUETRITON BRANDS INC': 'BLUETRITON BRANDS',
+    'BLUETRITON BRANDS INC.': 'BLUETRITON BRANDS',
+    'BROADWAY PARTY RENTALS': 'BROADWAY PARTY RENTALS',
+    'BUCKMILLER AUTOMATIC SPRINKLER CORP': 'BUCKMILLER AUTOMATIC SPRINKLER',
+    'C & J XPRESS CORP': 'C J XPRESS',
+    'C & J XPRESS CORP.': 'C J XPRESS',
+    'C.C. RENTAL': 'CC RENTAL',
+    'CC RENTAL': 'CC RENTAL',
+    'COURIER CAR RENTAL': 'CC RENTAL',
+    'COURIER CAR RENTAL INC': 'CC RENTAL',
+    'COURIER CAR RENTAL INC.': 'CC RENTAL',
+    'CDM TRUCKING CORP': 'CDM TRUCKING',
+    'CENTURY ELEVATOR': 'CENTURY ELEVATOR',
+    'CHAMPION ELEVATOR': 'CHAMPION ELEVATOR',
+    'CHARTER COMMUNICATIONS LLC': 'CHARTER COMMUNICATIONS',
+    'CITIWAVE TRADING INC': 'CITIWAVE TRADING',
+    'CITIWAVE TRADING INC.': 'CITIWAVE TRADING',
+    'CLANCY MOVING SYSTEMS INC': 'CLANCY MOVING SYSTEMS',
+    'CLEAN AIR GROUP': 'CLEAN AIR GROUP',
+    'CLEAN AIR GROUP INC': 'CLEAN AIR GROUP',
+    'CONSOLIDATED EDISON COMPANY OF NEW YORK INC': 'CON EDISON',
+    'CONSOLIDATED EDISON COMPANY OF NEW YORK INC.': 'CON EDISON',
+    'CONSOLIDATED EDISON COMPANY OF NEW YORK, INC.': 'CON EDISON',
+    'CONSOLIDATED EDISON COMPANY OF NY INC': 'CON EDISON',
+    'CONSOLIDATED EDISON COMPANY OF NY INC.': 'CON EDISON',
+    'CONSOLIDATED EDISON': 'CON EDISON',
+    'CON EDISON': 'CON EDISON',
+    'CON ED': 'CON EDISON',
+    'CONED': 'CON EDISON',
+    'CORNERSTONE CONTRACTING INC': 'CORNERSTONE CONTRACTING',
+    'CORNERSTONE CONTRACTING, INC': 'CORNERSTONE CONTRACTING',
+    'CORPORATE COFFEE SYSTEMS': 'CORPORATE COFFEE SYSTEMS',
+    'CREATIVE GRAIN': 'CREATIVE GRAIN',
+    'CREATIVE GRAIN LLC': 'CREATIVE GRAIN',
+    'CROSS FIRE & SECURITY': 'CROSS FIRE SECURITY',
+    'CROSS FIRE & SECURITY CO INC.': 'CROSS FIRE SECURITY',
+    'CYM TRANSPORTATION INC': 'CYM TRANSPORTATION',
+    'CYM TRANSPORTATION INC.': 'CYM TRANSPORTATION',
+    'DATA-STRUCTION INC': 'DATA-STRUCTION',
+    'DATA-STRUCTION INC.': 'DATA-STRUCTION',
+    'DEPENDABLE GLASS & MIRROR': 'DEPENDABLE GLASS MIRROR',
+    'DONNELLY MECHANICAL': 'DONNELLY MECHANICAL',
+    'DONNELLY MECHANICAL CORP': 'DONNELLY MECHANICAL',
+    'DONNELLY MECHANICAL INC': 'DONNELLY MECHANICAL',
+    'DRAIN KLEEN SEWER SERVICE INC': 'DRAIN KLEEN SEWER SERVICE',
+    'EAN HOLDINGS LLC': 'EAN HOLDINGS',
+    'EAN HOLDINGS, LLC': 'EAN HOLDINGS',
+    'EDGE AUTO INC': 'EDGE AUTO',
+    'EDGE AUTO INC.': 'EDGE AUTO',
+    'EDGE AUTO RENTAL': 'EDGE AUTO RENTAL',
+    'ELDORADO': 'ELDORADO',
+    'FEDERAL EXPRESS CORP': 'FEDERAL EXPRESS',
+    'FEDERAL EXPRESS CORPORATION': 'FEDERAL EXPRESS',
+    'FEDEX': 'FEDEX',
+    'FEDEX GROUND PACKAGE SYSTEM INC': 'FEDEX GROUND PACKAGE SYSTEM',
+    'FEDEX GROUND PACKAGE SYSTEM INC.': 'FEDEX GROUND PACKAGE SYSTEM',
+    'FIRE RESPONSE INC': 'FIRE RESPONSE',
+    'FIRE RESPONSE INC.': 'FIRE RESPONSE',
+    'FIRSTLINE LOCKSMITH': 'FIRSTLINE LOCKSMITH',
+    'FIRSTLINE LOCKSMITH LLC': 'FIRSTLINE LOCKSMITH',
+    'GC PLUMBING & HEATING': 'GC PLUMBING HEATING',
+    'GO NEW YORK TOURS': 'GO NEW YORK TOURS',
+    'GO NEW YORK TOURS INC': 'GO NEW YORK TOURS',
+    'GRAND PRIX TRADING CORP': 'GRAND PRIX TRADING',
+    'GTSD TRANSPORT LLC': 'GTSD TRANSPORT',
+    'HADDAD\'S INC': 'HADDAD\'S',
+    'HARVARD MAINTENANCE INC': 'HARVARD MAINTENANCE',
+    'HERCULES': 'HERCULES',
+    'HERCULES CORP.': 'HERCULES',
+    'HIGHBURY CONCRETE': 'HIGHBURY CONCRETE',
+    'HJV ENTERPRISE': 'HJV ENTERPRISE',
+    'HJV ENTERPRISE INC': 'HJV ENTERPRISE',
+    'HUB TRUCK RENTAL': 'HUB TRUCK RENTAL',
+    'HUB TRUCK RENTAL CORP': 'HUB TRUCK RENTAL',
+    'HUB TRUCK RENTAL INC': 'HUB TRUCK RENTAL',
+    'HUGH O\'KANE ELECTRIC CO INC': 'HUGH O\'KANE ELECTRIC',
+    'HUGH O\'KANE ELECTRIC CO. INC.': 'HUGH O\'KANE ELECTRIC',
+    'INDUSTRIAL COOLING INC': 'INDUSTRIAL COOLING',
+    'INDUSTRIAL COOLING, INC': 'INDUSTRIAL COOLING',
+    'INDUSTRIAL SOLUTIONS OF NY INC': 'INDUSTRIAL SOLUTIONS OF NY',
+    'INDUSTRIAL SOLUTIONS OF NY, INC': 'INDUSTRIAL SOLUTIONS OF NY',
+    'INTEGRITY SCAFFOLD SERVICE GROUP': 'INTEGRITY SCAFFOLD SERVICE GROUP',
+    'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES': 'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES',
+    'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES INC': 'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES',
+    'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES, INC': 'IRON MOUNTAIN INFORMATION MANAGEMENT SERVICES',
+    'JDP MECHANICAL': 'JDP MECHANICAL',
+    'JDP MECHANICAL INC': 'JDP MECHANICAL',
+    'JEROME ALUMINUM PRODUCTS': 'JEROME ALUMINUM PRODUCTS',
+    'JEROME ALUMINUM PRODUCTS CORPORATION': 'JEROME ALUMINUM PRODUCTS',
+    'JOVIN DEMO': 'JOVIN DEMO',
+    'JOVIN DEMO INCORPORATED': 'JOVIN DEMO',
+    'JTC PAINTING & DECORATING CORP': 'JTC PAINTING DECORATING',
+    'JTC PAINTING DECORATING CORP': 'JTC PAINTING DECORATING',
+    'KONE': 'KONE',
+    'KONE INC': 'KONE',
+    'KONE INC.': 'KONE',
+    'KP MEC INC': 'KP MEC',
+    'LEARDON BOILER WORKS INC': 'LEARDON BOILER WORKS',
+    'LEYVA TRANSPORTATION CORP': 'LEYVA TRANSPORTATION',
+    'LEYVA TRANSPORTATION CORP.': 'LEYVA TRANSPORTATION',
+    'LIDO STONE WORKS': 'LIDO STONE WORKS',
+    'LIDO STONE WORKS LLC': 'LIDO STONE WORKS',
+    'MAK-STAR LLC': 'MAK-STAR',
+    'MAQUETTE FINE ART SERVICES': 'MAQUETTE FINE ART SERVICES',
+    'MAQUETTE FINE ART SERVICES LLC': 'MAQUETTE FINE ART SERVICES',
+    'MARCELL TRANSPORT LLC': 'MARCELL TRANSPORT',
+    'MERCHANTS AUTOMOTIVE GROUP INC': 'MERCHANTS AUTOMOTIVE GROUP',
+    'MERCHANTS AUTOMOTIVE GROUP INC.': 'MERCHANTS AUTOMOTIVE GROUP',
+    'MJJ SERVICE INC': 'MJJ SERVICE',
+    'MJJ SERVICE, INC.': 'MJJ SERVICE',
+    'MTLR CORP': 'MTLR',
+    'NEPTUNE MACHINE': 'NEPTUNE MACHINE',
+    'NEPTUNE MACHINE INC': 'NEPTUNE MACHINE',
+    'NOUVEAU ELEVATOR': 'NOUVEAU ELEVATOR',
+    'PENSKE LEASING & RENTAL CO': 'PENSKE LEASING RENTAL',
+    'PENSKE LEASING & RENTAL CO.': 'PENSKE LEASING RENTAL',
+    'PENSKE TRUCK LEASING CORPORATION': 'PENSKE TRUCK LEASING',
+    'PIECE OF CAKE MOVING + STORAGE': 'PIECE OF CAKE MOVING + STORAGE',
+    'PIECE OF CAKE MOVING + STORAGE LLC': 'PIECE OF CAKE MOVING + STORAGE',
+    'PINK PINK TRADING INC': 'PINK PINK TRADING',
+    'PRECISION PIPELINE SOLUTIONS': 'PRECISION PIPELINE SOLUTIONS',
+    'PRECISION PIPELINE SOLUTIONS, LLC': 'PRECISION PIPELINE SOLUTIONS',
+    'PRESTIGIOUS MAINTENANCE': 'PRESTIGIOUS MAINTENANCE',
+    'PRESTIGIOUS MAINTENANCE INC': 'PRESTIGIOUS MAINTENANCE',
+    'PRIDE & SERVICE ELEVATOR': 'PRIDE SERVICE ELEVATOR',
+    'PRIDE & SERVICE ELEVATOR CO INC': 'PRIDE SERVICE ELEVATOR',
+    'PRIDE TRANSPORTATION SERVICES INC': 'PRIDE TRANSPORTATION SERVICES',
+    'PRO AIR MECHANICAL': 'PRO AIR MECHANICAL',
+    'PRO AIR MECHANICAL CORP': 'PRO AIR MECHANICAL',
+    'RAEL FIRE PROTECTION': 'RAEL FIRE PROTECTION',
+    'RIVIERA PRODUCE': 'RIVIERA PRODUCE',
+    'RIVIERA PRODUCE CORP': 'RIVIERA PRODUCE',
+    'RX ELECTRIC': 'RX ELECTRIC',
+    'RYDER TRUCK RENTAL INC': 'RYDER TRUCK RENTAL',
+    'RYDER TRUCK RENTAL INC.': 'RYDER TRUCK RENTAL',
+    'RYDER TRUCK RENTAL LTD': 'RYDER TRUCK RENTAL',
+    'SAFWAY ATLANTIC': 'SAFWAY ATLANTIC',
+    'SAFWAY ATLANTIC LLC': 'SAFWAY ATLANTIC',
+    'SALEM TRUCK LEASING INC': 'SALEM TRUCK LEASING',
+    'SALEM TRUCK LEASING INC.': 'SALEM TRUCK LEASING',
+    'SCHINDLER ELEVATOR': 'SCHINDLER ELEVATOR',
+    'SECURITY PRO NY INC': 'SECURITY PRO NY',
+    'SECURITY PRO NY INC.': 'SECURITY PRO NY',
+    'SOVEREIGN SERVICE': 'SOVEREIGN SERVICE',
+    'SOVEREIGN SERVICE CORP': 'SOVEREIGN SERVICE',
+    'STAGE CALL CORPORATION': 'STAGE CALL',
+    'SUNBELT RENTALS': 'SUNBELT RENTALS',
+    'SUNBELT RENTALS INC': 'SUNBELT RENTALS',
+    'SUPERIOR PLUMBING HEATING MECHANICAL': 'SUPERIOR PLUMBING HEATING MECHANICAL',
+    'SUPERIOR PLUMBING, HEATING & MECHANICAL LLC': 'SUPERIOR PLUMBING HEATING MECHANICAL',
+    'SYSTEMS 2000 PLUMBING SERVICE': 'SYSTEMS 2000 PLUMBING SERVICE',
+    'SYSTEMS 2000 PLUMBING SERVICE INC': 'SYSTEMS 2000 PLUMBING SERVICE',
+    'TAEIL ENTERPRISE INC': 'TAEIL ENTERPRISE',
+    'TAEIL ENTERPRISE LLC': 'TAEIL ENTERPRISE',
+    'TEAM ELECTRIC': 'TEAM ELECTRIC',
+    'TEAM ELECTRIC INC': 'TEAM ELECTRIC',
+    'TOUCH UP CLEANING': 'TOUCH UP CLEANING',
+    'TRI-STAR PLUMBING & HEATING': 'TRI-STAR PLUMBING HEATING',
+    'U-HAUL CO OF NEW YORK AND VERMONT': 'U-HAUL CO OF NEW YORK AND VERMONT',
+    'U-HAUL CO OF NEW YORK AND VERMONT INC': 'U-HAUL CO OF NEW YORK AND VERMONT',
+    'U-HAUL CO. OF NEW YORK AND VERMONT INC.': 'U-HAUL CO OF NEW YORK AND VERMONT',
+    'U-HAUL CO. OF NEW YORK AND VERMONT, INC.': 'U-HAUL CO OF NEW YORK AND VERMONT',
+    'U.T.F. TRUCKING INC.': 'UTF TRUCKING',
+    'UHAUL': 'UHAUL',
+    'UNITED VAN LINES': 'UNITED VAN LINES',
+    'UNITED VAN LINES LLC': 'UNITED VAN LINES',
+    'UPRIGHT INSTALLATIONS': 'UPRIGHT INSTALLATIONS',
+    'UPRIGHT INSTALLATIONS INC': 'UPRIGHT INSTALLATIONS',
+    'UTF TRUCKING': 'UTF TRUCKING',
+    'VALLE TRANSPORTATION SERVICE': 'VALLE TRANSPORTATION SERVICE',
+    'VALLE TRANSPORTATION SERVICE LLC': 'VALLE TRANSPORTATION SERVICE',
+    'VERIZON BUSINESS NETWORK SERVICES LLC': 'VERIZON BUSINESS NETWORK SERVICES',
+    'VIXXO': 'VIXXO'
+};
+function normalizeCompanyName(companyName){
+    if(!companyName) return 'Unknown';
+    const normalized = companyName.toUpperCase().trim();
+    if(companyNameMapping[normalized]) return companyNameMapping[normalized];
+    return normalized;
+}
+
+/* ============================== CSV PARSER ============================== */
+function parseCSV(text){
+  const rows = []; let row = []; let field = ''; let inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field+='"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+      else if(c === '\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  if(!rows.length) return [];
+  const headers = rows[0].map(h => h.trim());
+  return rows.slice(1).filter(r => r.some(v => v && v.trim() !== '')).map(r => {
+    const obj = {};
+    headers.forEach((h,i) => obj[h] = (r[i] !== undefined ? r[i].trim() : ''));
+    return obj;
+  });
+}
+
+const fetchErrors = {}; // tracks which sources failed on the most recent load, for on-screen reporting
+const isFileProtocol = (location.protocol === 'file:');
+
+// fetch with a hard timeout so one slow proxy doesn't stall the whole chain
+function fetchWithTimeout(url, ms){
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  return fetch(url, {cache:'no-store', signal: controller.signal}).finally(() => clearTimeout(t));
+}
+
+// Direct fetch is the primary path (works when served over http://localhost — see the
+// on-screen warning if opened as file://). Public CORS proxies are last-resort fallbacks only.
+async function fetchCSV(gid, label){
+  const url = `https://docs.google.com/spreadsheets/d/e/${CFG.pubId}/pub?gid=${gid}&single=true&output=csv`;
+  const attempts = [
+    {name:'direct', run: () => fetchWithTimeout(url, 9000)},
+    {name:'codetabs proxy', run: () => fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), 9000)},
+    {name:'corsproxy.io', run: () => fetchWithTimeout('https://corsproxy.io/?url=' + encodeURIComponent(url), 9000)},
+    {name:'allorigins', run: () => fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 9000)}
+  ];
+  let lastErr = null;
+  for(const attempt of attempts){
+    try{
+      const res = await attempt.run();
+      if(!res.ok) throw new Error(attempt.name + ': HTTP ' + res.status);
+      const text = await res.text();
+      if(!text || text.trim().length === 0) throw new Error(attempt.name + ': empty response');
+      const rows = parseCSV(text);
+      if(!rows.length) throw new Error(attempt.name + ': parsed 0 rows (check the gid/sharing settings for this tab)');
+      delete fetchErrors[label];
+      return rows;
+    }catch(e){
+      lastErr = (e && e.name === 'AbortError') ? new Error(attempt.name + ': timed out') : e;
+    }
+  }
+  console.warn('CSV fetch failed for', label, '(gid ' + gid + ')', lastErr);
+  fetchErrors[label] = lastErr ? lastErr.message : 'unknown error';
+  return null;
+}
+
+/* ============================== UTIL ============================== */
+function parseDate(str){
+  if(!str) return null;
+  const cleaned = String(str).trim().replace(/\s*-\s*#?\d+\s*$/,'').trim();
+  if(!cleaned) return null;
+  if(/\d{4}/.test(cleaned)){
+    const d = new Date(cleaned);
+    if(!isNaN(d.getTime())) return d;
+  }
+  const m = cleaned.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:[, ]+(\d{1,2}):(\d{2}))?/);
+  if(m){
+    let [_, mo, da, yr, hh, mi] = m;
+    if(!yr) yr = '2023'; // no-year entries line up with each identity's earliest 2023 request batches
+    else if(yr.length === 2) yr = '20'+yr;
+    const d = new Date(+yr, +mo-1, +da, +(hh||0), +(mi||0));
+    if(!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+function money(n){
+  n = Number(n) || 0;
+  return '$' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function numFrom(v){
+  if(v === undefined || v === null) return 0;
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g,''));
+  return isNaN(n) ? 0 : n;
+}
+function computePayout(amount){
+  amount = Number(amount) || 0;
+  if(amount <= 0) return 0;
+  if(amount > 1000) return 250; // program cap: flat $250 when the collected amount exceeds $1,000
+  return +(amount * 0.25).toFixed(2);
+}
+const STANDARD_PAYOUT = 87.5; // 25% of the standard $350 fine — used only when a requested row has no dollar amount on file yet
+
+/* Repeat-offense fine tiers, detected from the Description column.
+   (Per user spec: 1st $350, 2nd $450, 3rd $600. Note NYC's official schedule is
+   350/440/600 — if 440 is correct, change the single number below.) */
+const FINE_BY_OFFENSE = { 1:350, 2:450, 3:600 };
+function detectOffense(desc){
+  const d = String(desc||'').toLowerCase();
+  // matches "3rd offense", "third offense", and DEP's standard "3rd or subsequent offense" —
+  // but not street names like "3rd Ave" (the only words allowed between are "or subsequent")
+  if(/(3rd|third)(?:[\s,]+or[\s,]+subsequent)?[\s\-]*offen[cs]e/.test(d)) return 3;
+  if(/(2nd|second)(?:[\s,]+or[\s,]+subsequent)?[\s\-]*offen[cs]e/.test(d)) return 2;
+  return 1;
+}
+/* Offense tier detection, exact-value only. Ranges misfired: defaulted cases carry inflated
+   penalty totals that are NOT tier signals. Signals used, strongest first:
+   - your own received share (ground truth): $87.50→1st, $110/$112.50→2nd, $150→3rd
+   - the base violation amount hitting NYC's exact schedule: $350→1st, $440/$450→2nd, $600→3rd
+   - the description text ("2nd offense" etc.) */
+const TIER_BY_VIOLATION = { 350:1, 440:2, 450:2, 600:3 };
+const TIER_BY_SHARE = { 87.5:1, 110:2, 112.5:2, 150:3 };
+function offenseFor(rec){
+  const fromDesc = detectOffense(rec.description);
+  const fromShare = TIER_BY_SHARE[rec.paidToMe] || 1;
+  const fromAmt = TIER_BY_VIOLATION[rec.violationAmount] || TIER_BY_VIOLATION[rec.paidAmount] || 1;
+  return Math.max(fromDesc, fromShare, fromAmt, rec._plateTier || 1);
+}
+
+/* ---- Plate-history tier inference (LOCAL data only — no API calls) ----
+   Why exact amounts and descriptions undercount 3rds: defaulted cases carry penalty-inflated
+   totals that never equal $600, the $250 cap erases the payout signal above $1,000, and the
+   description only knows what was typed in the field. The plate's own filing history is the
+   real signal. Legal rule (15 RCNY 43-01(5)): a 2nd offense requires one prior FINDING of
+   violation (default counts; a paid or requested case implies a finding); the 3-year window
+   runs from the first finding's occurrence date; a 3rd needs two priors within that window. */
+const PLATE_PLACEHOLDERS = /^(NOPLATES?|NONE|NA|NOTAGS?|UNKNOWN|MISSING|NOPLATEDISPLAYED|X+)$/;
+function plateKey(r){
+  const p = String(r.licensePlate||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!p || PLATE_PLACEHOLDERS.test(p)) return null;
+  return p + '|' + String(r.licenseState||'').toUpperCase().trim();
+}
+function isFoundInViolation(rec){
+  const result = String(rec.hearingResult||'').toUpperCase();
+  const status = String(rec.hearingStatus||'').toUpperCase();
+  if(result.includes('NO VIOLATION')) return false;
+  return rec._inPaidLog || rec._inReqLog || result.includes('VIOLATION') || result.includes('DEFAULT') ||
+         status.includes('DEFAULT') || status.includes('PAID');
+}
+function applyPlateHistoryTiers(merged){
+  const THREE_YEARS = 3 * 365.25 * 86400000;
+  const byPlate = new Map();
+  for(const r of merged){
+    const k = plateKey(r);
+    if(!k) continue;
+    const inc = incidentDateOf(r);
+    if(!inc) continue;
+    if(!byPlate.has(k)) byPlate.set(k, []);
+    byPlate.get(k).push({ ts: inc.getTime(), found: isFoundInViolation(r), rec: r });
+  }
+  let upgraded = 0;
+  for(const list of byPlate.values()){
+    if(list.length < 2) continue;
+    list.sort((a,b) => a.ts - b.ts);
+    for(let i = 1; i < list.length; i++){
+      const cur = list[i];
+      const priors = list.slice(0, i).filter(p => p.ts < cur.ts);
+      const findings = priors.filter(p => p.found);
+      if(!findings.length) continue;
+      const first = findings[0].ts;
+      const within = priors.filter(p => p.ts >= first && p.ts - first <= THREE_YEARS);
+      const tier = within.length >= 2 ? 3 : 2;
+      cur.rec._plateTier = tier;
+      const newOffense = offenseFor(cur.rec);
+      if(newOffense > (cur.rec.offense||1)){ cur.rec.offense = newOffense; upgraded++; }
+    }
+  }
+  if(upgraded) console.log('[offense] plate history upgraded ' + upgraded + ' rows to 2nd/3rd tier');
+}
+function receivedFor(rec){ return rec._rowType === 'paid' ? (rec.paidToMe || rec.payout || 0) : 0; }
+
+/* "Unknown" means we don't know the company YET — it is not a company and never groups as one. */
+function isUnknownCo(norm){ return /^UNKNOWN$/i.test(String(norm||'').trim()); }
+/* The Direct Link column from the master sheet, wherever it lives in the extras. */
+function directLinkOf(rec){
+  if(!rec._extra) return null;
+  for(const k of Object.keys(rec._extra)){
+    if(/link|url/i.test(k) && /^https?:\/\//i.test(rec._extra[k])) return rec._extra[k];
+  }
+  return null;
+}
+function complaintCell(rec){
+  const cn = rec.complaintNumber;
+  if(!cn) return '—';
+  const link = directLinkOf(rec);
+  return link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(cn)}</a>` : esc(cn);
+}
+
+/* ---- Survival model: what's an OPEN row actually worth, given its age? ----
+   An unresolved complaint from Jan 2023 is not worth $87.50 — it's a zombie. From the user's
+   own history: U = ultimate money rate among mature cohorts (incidents ≥ 540 days old), and
+   G(a) = fraction of eventual conversions that had happened by age a (incident → request date).
+   P(eventually pays | still open at age a) = U·(1−G(a)) / (U·(1−G(a)) + (1−U)).
+   Old open rows → P ≈ 0; fresh rows → P ≈ U. Requested rows, actual payments, and rows NYC
+   already shows as paid in full are never discounted — that money is real. */
+/* ---- Survival model v2: win rate × current-pace aging ----
+   The old model punished normal-speed 2025/2026 rows because it learned conversion pace
+   from the fast early era and let zombies drag down the base rate. This version separates
+   the two questions:
+   1) W = win rate among RESOLVED rows only (moneyed ÷ (moneyed + disqualified + dismissed)).
+      Unresolved rows don't vote — the ~3,000 unreviewed filings are worth ~W × payout each.
+   2) Aging is judged against the CURRENT pace: the typical incident→conversion age among the
+      most recent 50 conversions. A row keeps full W-weighted value until that age, then fades
+      linearly to $0 by 2× that age. A 2023 zombie is far past 2×; a 2025 row merely waiting
+      at today's pace is untouched. */
+/* ---- Survival model v3: the grand formula ----
+   Every row is valued by WHAT KIND of row it is, not one blanket rule:
+
+   EGT = Σ paid (actual $)                                — money in hand
+       + Σ requested (full base)                          — confirmed, in the mail
+       + Σ NYC-shows-paid-in-full (full base)             — sitting at NYC, unclaimed
+       + Σ defaulted (base × 0.5)                         — finding exists; collection ~coin-flip
+       + Σ hearing-scheduled (base × W)                   — demonstrably moving; no age fade
+       + Σ open (base × W × T(age))                       — waiting; fades on the tail below
+       + Σ disqualified/dismissed (0)
+
+   W  = lifetime win rate among RESOLVED rows (moneyed ÷ (moneyed + dead)). Lifetime on
+        purpose: recent cohorts' resolved mix over-represents disqualifications (they resolve
+        fast, wins resolve slow), so a "recent W" would be biased LOW.
+   T  = the TIME-WARPED conversion tail. G(a) = share of all your historical conversions that
+        had happened by age a. warp = current median conversion age ÷ historical median — how
+        much slower the pipeline runs now. T(age) = 1 − G(age ÷ warp): a row 300 days old in
+        a 2×-slower era is only "150 days along" in historical terms, so it keeps most of its
+        value; a 2023 zombie is far past the tail either way and fades to $0. */
+const DEFAULT_COLLECTION = 0.5; // defaulted = finding of violation; NYC's eventual collection ≈ coin-flip
+let SURV = null;
+function median(sortedArr){ return sortedArr.length ? sortedArr[Math.floor(sortedArr.length/2)] : null; }
+function buildSurvival(){
+  let moneyed = 0, dead = 0;
+  const conv = []; // {when: conversion ts, age: days from incident}
+  for(const r of appData.merged){
+    if(r._rowType === 'paid' || r._rowType === 'requested'){
+      moneyed++;
+      const inc = incidentDateOf(r);
+      const c = parseDate(r.requestedDate) || parseDate(r.paidDate);
+      if(inc && c && c > inc) conv.push({ when: c.getTime(), age: (c - inc) / 86400000 });
+    }
+    else if(r._rowType === 'disqualified' || r._rowType === 'dismissed') dead++;
+  }
+  const allAges = conv.map(x=>x.age).sort((a,b)=>a-b);
+  const recentAges = conv.slice().sort((a,b)=>b.when-a.when).slice(0,50).map(x=>x.age).sort((a,b)=>a-b);
+  const histMed = median(allAges), curMed = median(recentAges);
+  SURV = {
+    W: (moneyed + dead) >= 30 ? moneyed / (moneyed + dead) : null,
+    allAges,
+    warp: (histMed && curMed) ? Math.max(0.25, curMed / histMed) : 1,
+    resolvedN: moneyed + dead
+  };
+  console.log('[survival v3] W =', SURV.W === null ? 'n/a' : (SURV.W*100).toFixed(1)+'%',
+    '(' + SURV.resolvedN + ' resolved) · hist median conversion', histMed ? histMed.toFixed(0)+'d' : '—',
+    '· current median', curMed ? curMed.toFixed(0)+'d' : '—', '· warp ×' + SURV.warp.toFixed(2));
+}
+function survivalP(ageDays){
+  if(!SURV) buildSurvival();
+  if(SURV.W === null || SURV.allAges.length < 30){
+    return ageDays < 365 ? 0.85 : (ageDays < 720 ? 0.4 : 0.1); // not enough history yet
+  }
+  const eq = ageDays / SURV.warp; // translate today's age into historical-pace units
+  let lo = 0, hi = SURV.allAges.length;
+  while(lo < hi){ const mid = (lo+hi)>>1; if(SURV.allAges[mid] <= eq) lo = mid+1; else hi = mid; }
+  const T = 1 - lo / SURV.allAges.length; // share of conversions that historically happened AFTER this point
+  return SURV.W * T;
+}
+
+/* Which valuation branch a row falls into — shared by the formula and the breakdown. */
+function categorize(rec){
+  if(rec._rowType === 'disqualified' || rec._rowType === 'dismissed') return 'dead';
+  if(rec._rowType === 'paid') return 'paid';
+  if(rec._rowType === 'requested') return 'requested';
+  if(isPaidInFull(rec)) return 'pifUnclaimed';
+  const s = String(rec.hearingStatus||'').toUpperCase(), h = String(rec.hearingResult||'').toUpperCase();
+  if(s.includes('DEFAULT') || h.includes('DEFAULT')) return 'defaulted';
+  if(rec.hearingDate) return 'scheduled';
+  return 'open';
+}
+
+/* Expected payout for a record — the grand formula, per row. */
+function expectedPayoutFor(rec){
+  const cat = categorize(rec);
+  if(cat === 'dead') return 0;
+  if(cat === 'paid') return rec.paidToMe || rec.payout || computePayout(FINE_BY_OFFENSE[rec.offense||1]);
+  const base = computePayout(rec.paidAmount || rec.violationAmount || FINE_BY_OFFENSE[rec.offense||1]);
+  if(cat === 'requested' || cat === 'pifUnclaimed') return base;
+  if(cat === 'defaulted') return base * DEFAULT_COLLECTION;
+  if(cat === 'scheduled') return base * ((SURV && SURV.W != null) ? SURV.W : 0.85);
+  const inc = incidentDateOf(rec);
+  const age = inc ? (Date.now() - inc.getTime()) / 86400000 : 9999;
+  return base * survivalP(age);
+}
+
+/* Console-auditable breakdown of the Estimated Grand Total. */
+function egtBreakdown(){
+  const cats = { paid:{n:0,ev:0}, requested:{n:0,ev:0}, pifUnclaimed:{n:0,ev:0}, defaulted:{n:0,ev:0}, scheduled:{n:0,ev:0}, open:{n:0,ev:0}, dead:{n:0,ev:0} };
+  for(const r of appData.merged){
+    const c = cats[categorize(r)];
+    c.n++; c.ev += expectedPayoutFor(r);
+  }
+  return cats;
+}
+/* Incident-time basis: the From clip timestamp is when the violation actually HAPPENED.
+   All calendar/stats date math uses this, falling back to submission date for old rows. */
+function incidentDateOf(rec){ return parseDate(rec.clipFrom) || parseDate(rec.dateSubmitted); }
+// Looser match used by the general New Money list (kept as-is from the old app).
+function isPaidInFull(rec){
+  const s = (rec.hearingStatus||'').toUpperCase();
+  return s.includes('PAID IN FULL') || s.includes('PAID');
+}
+// Stricter exact match used ONLY by Export for Email — the old app intentionally
+// filtered that feature on hearingStatus === 'paid in full' exactly. Preserved as-is.
+function isPaidInFullExact(rec){
+  return (rec.hearingStatus||'').trim().toLowerCase() === 'paid in full';
+}
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+function normalizeDS(s){ return (s||'').toUpperCase().replace(/[^A-Z]/g,''); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDateMDY(d){ return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`; } // M/D/YYYY, not zero-padded
+
+/* ============================== DATA MODEL ============================== */
+let appData = { merged: [], lastRefresh: null, changeLog: [], lastDiffCount: 0 };
+
+const DATASET_LABELS = { atnyc:'AT NYC', at:'AT', mbt:'MBT' };
+const DATASET_KEYS = { ATNYC:'atnyc', AT:'at', MBT:'mbt' }; // normalizeDS(label) -> config key
+
+function fieldPick(row, ...keys){
+  for(const k of keys){
+    for(const rk of Object.keys(row)){
+      if(rk.toLowerCase().replace(/[^a-z0-9]/g,'') === k.toLowerCase().replace(/[^a-z0-9]/g,'')){
+        if(row[rk]) return row[rk];
+      }
+    }
+  }
+  return '';
+}
+
+/* Raw-header keys already surfaced by the named columns below — everything else in the
+   master sheets (Direct Link, Code, Borough, School or Park, ID, whatever gets added later)
+   is captured per-row into _extra and shown dynamically in the expanded view. */
+const CONSUMED_KEYS = new Set(['complaintnumber','companyname','status','datesubmitted','summonsnumber','hearingdate',
+  'licenseplate','licensestate','description','hearingstatus','hearingresult','compliancestatus','paidamount',
+  'totalviolationamount','penaltyimposed','additionalpenalty','updatedat','from','to','latitude','longitude','balancedue']);
+function normKey(k){ return k.toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+function normalizeMasterRow(row, datasetKey){
+  const company = fieldPick(row,'Company Name') || 'Unknown';
+  const description = fieldPick(row,'Description');
+  const _extra = {};
+  for(const rk of Object.keys(row)){
+    if(!CONSUMED_KEYS.has(normKey(rk)) && row[rk]) _extra[rk.trim()] = row[rk];
+  }
+  return {
+    dataset: DATASET_LABELS[datasetKey],
+    summons: fieldPick(row,'Summons Number','Summons #','SummonsNumber'),
+    complaintNumber: fieldPick(row,'Complaint Number'),
+    company: company,
+    companyNorm: normalizeCompanyName(company),
+    location: fieldPick(row,'Place of Occurrence','Company Address','Location'),
+    dateSubmitted: fieldPick(row,'Date Submitted'),
+    hearingDate: fieldPick(row,'Hearing Date'),
+    licensePlate: fieldPick(row,'License Plate'),
+    licenseState: fieldPick(row,'License State'),
+    description: description,
+    offense: detectOffense(description),
+    hearingStatus: fieldPick(row,'hearing_status','Hearing Status') || fieldPick(row,'Status'),
+    hearingResult: fieldPick(row,'hearing_result','Hearing Result'),
+    complianceStatus: fieldPick(row,'compliance_status','Compliance Status'),
+    paidAmount: numFrom(fieldPick(row,'paid_amount','Paid Amount')),
+    balanceDue: numFrom(fieldPick(row,'balance_due','Balance Due')),
+    violationAmount: numFrom(fieldPick(row,'total_violation_amount','Total Violation Amount')),
+    penaltyImposed: numFrom(fieldPick(row,'penalty_imposed','Penalty Imposed')),
+    additionalPenalty: numFrom(fieldPick(row,'additional_penalty','Additional Penalty')),
+    updatedAt: fieldPick(row,'updated_at','Updated At'),
+    clipFrom: fieldPick(row,'From'),
+    clipTo: fieldPick(row,'To'),
+    latitude: fieldPick(row,'Latitude'),
+    longitude: fieldPick(row,'Longitude'),
+    status: fieldPick(row,'Status'),
+    disqualReason: '',
+    _extra: _extra,
+    _rowType: 'none'
+  };
+}
+
+/* Exact status logic reconstructed from the original app, in priority order.
+   Real priority: dismissed > disqualified > submitted (blocks paid/requested) > paid > requested. */
+function classifyRow(rec){
+  let tag = null;
+  // 1. Status literally says "Submitted"
+  if((rec.status||'').trim().toLowerCase() === 'submitted') tag = 'submitted';
+  // 2/3. Paid/Requested log matches — blocked if already tagged submitted
+  if(rec._inPaidLog && tag !== 'submitted') tag = 'paid';
+  else if(rec._inReqLog && tag !== 'submitted' && tag !== 'paid') tag = 'requested';
+  // 4. Hearing Result contains "dismissed" — overrides everything above
+  if(((rec.hearingResult||'').toLowerCase()).includes('dismissed')){
+    tag = 'dismissed';
+    if(!rec.disqualReason) rec.disqualReason = 'Dismissed';
+  }
+  // 5. Else Status contains "disqualified" — also overrides paid/requested/submitted
+  else if(((rec.status||'').toLowerCase()).includes('disqualified')){
+    tag = 'disqualified';
+    if(!rec.disqualReason) rec.disqualReason = 'Disqualified (reason not specified)';
+  }
+  rec._rowType = tag || 'none';
+}
+
+async function loadAllData(silent){
+  if(!silent) setStatus('Fetching latest data…', true);
+  for(const k of Object.keys(fetchErrors)) delete fetchErrors[k];
+  const [atnycRows, atRows, mbtRows, reqRows, paidRows, disqRows] = await Promise.all([
+    fetchCSV(CFG.gids.atnyc,'ATNYC'), fetchCSV(CFG.gids.at,'AT'), fetchCSV(CFG.gids.mbt,'MBT'),
+    fetchCSV(CFG.gids.requested,'Requested'), fetchCSV(CFG.gids.paid,'Paid'),
+    fetchCSV(CFG.gids.disqreasons,'DisqReasons')
+  ]);
+  // Complaint Number -> specific disqualification reason. Joined by COMPLAINT number:
+  // disqualified complaints never get a real summons, so there's nothing else to join on.
+  const disqMap = {};
+  for(const r of (disqRows||[])){
+    const cn = fieldPick(r,'Complaint Number');
+    const reason = fieldPick(r,'Disqualification Reason');
+    if(cn && reason) disqMap[cn] = reason;
+  }
+  console.log('[debug] rows fetched — ATNYC:', atnycRows&&atnycRows.length, 'AT:', atRows&&atRows.length, 'MBT:', mbtRows&&mbtRows.length, 'Requested:', reqRows&&reqRows.length, 'Paid:', paidRows&&paidRows.length);
+
+  const masterSets = { atnyc: atnycRows, at: atRows, mbt: mbtRows };
+  // "Payment Request Email" is the actual date-requested column in the Requested tab
+  // (a repurposed column that was never renamed) — do not look for "Payment Requested".
+  const requested = (reqRows||[]).map(r => ({
+    summons: fieldPick(r,'Summons Number','Summons #'),
+    requestedDate: fieldPick(r,'Payment Request Email','Payment Requested','Payment Request Date','Payment Request'),
+    dataset: fieldPick(r,'Dataset')
+  }));
+  const paid = (paidRows||[]).map(r => ({
+    summons: fieldPick(r,'Summons Number','Summons #'),
+    paidToMe: numFrom(fieldPick(r,'Paid To Me')),
+    paidDate: fieldPick(r,'Payment Received','Payment Received Date'),
+    dataset: fieldPick(r,'Dataset')
+  }));
+
+  // index the logs once: "summons|DATASET" (and "summons|" for entries with no dataset label)
+  const reqIdx = new Map(), paidIdx = new Map();
+  for(const r of requested) reqIdx.set(r.summons + '|' + (r.dataset ? normalizeDS(r.dataset) : ''), r);
+  for(const p of paid) paidIdx.set(p.summons + '|' + (p.dataset ? normalizeDS(p.dataset) : ''), p);
+
+  let merged = [];
+  for(const key of Object.keys(masterSets)){
+    const rows = masterSets[key];
+    if(!rows) continue;
+    const label = DATASET_LABELS[key];
+    for(const raw of rows){
+      const rec = normalizeMasterRow(raw, key);
+      // Rows with no summons number yet (filed, but DEP hasn't issued a summons) are KEPT —
+      // they simply can't join the Paid/Requested logs or NYC enrichment until one exists.
+      if(!rec.summons && !rec.complaintNumber) continue; // truly empty identity — unusable
+      const reqMatch = rec.summons ? (reqIdx.get(rec.summons + '|' + normalizeDS(label)) || reqIdx.get(rec.summons + '|')) : null;
+      const paidMatch = rec.summons ? (paidIdx.get(rec.summons + '|' + normalizeDS(label)) || paidIdx.get(rec.summons + '|')) : null;
+      rec._inPaidLog = !!paidMatch;
+      rec._inReqLog = !!reqMatch;
+      if(rec.complaintNumber && disqMap[rec.complaintNumber]) rec.disqualReason = disqMap[rec.complaintNumber];
+      if(paidMatch){ rec.paidToMe = paidMatch.paidToMe; rec.paidDate = paidMatch.paidDate; }
+      if(reqMatch){ rec.requestedDate = reqMatch.requestedDate; }
+      classifyRow(rec);
+      rec.offense = offenseFor(rec);
+      rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+      merged.push(rec);
+    }
+  }
+  const extraHeaders = new Set();
+  for(const r of merged){ if(r._extra) for(const k of Object.keys(r._extra)) extraHeaders.add(k); }
+  console.log('[extras] columns detected in master sheets:', extraHeaders.size ? [...extraHeaders].sort().join(', ') : 'NONE — check the sheet headers');
+  const noReason = merged.filter(r => r._rowType === 'disqualified' && (!r.disqualReason || r.disqualReason === 'Disqualified (reason not specified)'));
+  if(noReason.length) console.log('[disq] ' + noReason.length + ' disqualified complaints have no entry in the Disqualification Reasons tab. Sample complaint numbers:', noReason.slice(0,20).map(r=>r.complaintNumber).join(', '));
+  console.log('[debug] merged total:', merged.length, 'by dataset:', {
+    AT: merged.filter(r=>normalizeDS(r.dataset)===normalizeDS('AT')).length,
+    'AT NYC': merged.filter(r=>normalizeDS(r.dataset)===normalizeDS('AT NYC')).length,
+    MBT: merged.filter(r=>normalizeDS(r.dataset)===normalizeDS('MBT')).length
+  });
+
+  if(CFG.enrich !== 'off'){
+    await enrichFromNYC(merged);
+    // re-classify after enrichment in case hearing_result changed to/from "dismissed",
+    // and re-derive offense tiers now that real dollar amounts are in
+    for(const rec of merged){ classifyRow(rec); rec.offense = offenseFor(rec); }
+  }
+
+  applyPlateHistoryTiers(merged);
+
+  diffAgainstPrevious(merged);
+
+  SURV = null; // survival model must rebuild against fresh data
+  appData.merged = merged;
+  appData.requestedRaw = requested;
+  appData.paidRaw = paid;
+  appData.lastRefresh = new Date().toISOString();
+  persistCache();
+  renderErrorBanner();
+  const errCount = Object.keys(fetchErrors).length;
+  if(errCount){
+    setStatus(`Loaded with ${errCount} source${errCount>1?'s':''} failing — see banner above`, false);
+  } else {
+    setStatus('Up to date', false); // always stop the refresh sweep, silent or not
+  }
+  renderAll();
+  const bd = egtBreakdown();
+  console.log('[grand total] ' + Object.keys(bd).map(k => k + ': ' + bd[k].n + ' rows → ' + money(bd[k].ev)).join(' · '));
+}
+
+/* ============================== CHANGES TRACKER ============================== */
+const CHANGE_LABELS = { new:'New Complaint', summons_assigned:'Summons Assigned', hearing_status:'Hearing Status', hearing_result:'Hearing Result', payment_amount:'Payment Amount' };
+const CHANGE_LOG_CAP = 800;
+
+function diffKey(r){ return r.dataset + '|' + (r.summons || 'c:' + (r.complaintNumber||'')); }
+
+function diffAgainstPrevious(merged){
+  const prev = appData.merged || [];
+  if(!prev.length){ appData.lastDiffCount = 0; return; } // first-ever load: nothing to diff against
+  const prevMap = new Map(prev.map(r => [diffKey(r), r]));
+  const prevByComplaint = new Map();
+  for(const r of prev){ if(r.complaintNumber) prevByComplaint.set(r.dataset + '|c:' + r.complaintNumber, r); }
+  const ts = new Date().toISOString();
+  const changes = [];
+  for(const rec of merged){
+    let old = prevMap.get(diffKey(rec));
+    // A complaint that just received its summons changes diff key — find it by complaint number
+    // and log that graduation as its own change type instead of a phantom "new complaint".
+    if(!old && rec.summons && rec.complaintNumber){
+      const byComplaint = prevByComplaint.get(rec.dataset + '|c:' + rec.complaintNumber);
+      if(byComplaint && !byComplaint.summons){
+        old = byComplaint;
+        changes.push({ ts, type:'summons_assigned', dataset: rec.dataset, summons: rec.summons, company: rec.company, before:'(no summons)', after: rec.summons });
+      }
+    }
+    const base = { ts, dataset: rec.dataset, summons: rec.summons || ('Complaint ' + rec.complaintNumber), company: rec.company };
+    if(!old){
+      changes.push(Object.assign({type:'new', before:'', after:''}, base));
+      continue;
+    }
+    if((old.hearingStatus||'') !== (rec.hearingStatus||''))
+      changes.push(Object.assign({type:'hearing_status', before: old.hearingStatus||'—', after: rec.hearingStatus||'—'}, base));
+    if((old.hearingResult||'') !== (rec.hearingResult||''))
+      changes.push(Object.assign({type:'hearing_result', before: old.hearingResult||'—', after: rec.hearingResult||'—'}, base));
+    if((old.paidAmount||0) !== (rec.paidAmount||0))
+      changes.push(Object.assign({type:'payment_amount', before: money(old.paidAmount||0), after: money(rec.paidAmount||0)}, base));
+  }
+  appData.changeLog = changes.concat(appData.changeLog || []).slice(0, CHANGE_LOG_CAP);
+  appData.lastDiffCount = changes.length;
+  if(changes.length) console.log('[changes] logged', changes.length, 'changes this refresh');
+}
+
+function renderErrorBanner(){
+  let banner = document.getElementById('error-banner');
+  const keys = Object.keys(fetchErrors);
+  if(!keys.length){ if(banner) banner.remove(); return; }
+  if(!banner){
+    banner = document.createElement('div');
+    banner.id = 'error-banner';
+    banner.style.cssText = 'background:#fdeceb; border:1px solid var(--danger); color:#96281b; border-radius:8px; padding:12px 16px; margin-bottom:14px; font-size:.82em; line-height:1.5;';
+    document.getElementById('status-line').insertAdjacentElement('afterend', banner);
+  }
+  banner.innerHTML = '<b>Could not load: ' + keys.join(', ') + '.</b> ' +
+    keys.map(k => `${k} — ${fetchErrors[k]}`).join(' · ') +
+    '<br>Check that each tab is published to the web (File → Share → Publish to web) and that the gid in Settings matches that tab, then hit Clear Cached Data to retry.';
+}
+
+async function enrichFromNYC(records){
+  const withSummons = records.filter(r => r.summons);
+  const batchSize = 50;
+  for(let i=0;i<withSummons.length;i+=batchSize){
+    const batch = withSummons.slice(i, i+batchSize);
+    const list = batch.map(r => `'${r.summons}'`).join(',');
+    const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=summons_number in (${list})&$limit=${batchSize}`;
+    try{
+      const res = await fetch(url);
+      if(!res.ok) continue;
+      const apiRows = await res.json();
+      for(const row of apiRows){
+        const rec = batch.find(r => r.summons === row.summons_number);
+        if(!rec) continue;
+        if(row.hearing_status) rec.hearingStatus = row.hearing_status;
+        if(row.hearing_result) rec.hearingResult = row.hearing_result;
+        if(row.compliance_status) rec.complianceStatus = row.compliance_status;
+        if(row.paid_amount) rec.paidAmount = numFrom(row.paid_amount);
+        if(row.total_violation_amount) rec.violationAmount = numFrom(row.total_violation_amount);
+        if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
+        if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
+        rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+      }
+    }catch(e){
+      console.warn('NYC enrichment batch failed (continuing with sheet data)', e);
+    }
+  }
+}
+
+/* IndexedDB key-value store: the real fix for the storage-trim problem. localStorage caps at
+   ~5MB per site; IndexedDB allows hundreds of MB, so the full dataset (extras and all) caches
+   without trimming. localStorage remains the fallback for very old browsers. */
+function idbOpen(){
+  return new Promise(res => {
+    if(typeof indexedDB === 'undefined') return res(null);
+    try{
+      const rq = indexedDB.open('truckNarcDB', 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => res(null);
+    }catch(e){ res(null); }
+  });
+}
+function idbGet(key){
+  return idbOpen().then(db => !db ? undefined : new Promise(res => {
+    try{
+      const rq = db.transaction('kv').objectStore('kv').get(key);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => res(undefined);
+    }catch(e){ res(undefined); }
+  }));
+}
+function idbSet(key, val){
+  return idbOpen().then(db => !db ? false : new Promise(res => {
+    try{
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(val, key);
+      tx.oncomplete = () => res(true);
+      tx.onerror = () => res(false);
+    }catch(e){ res(false); }
+  }));
+}
+
+function persistCache(){
+  appData.extrasStripped = false;
+  idbSet('appData', JSON.parse(JSON.stringify(appData))).then(ok => {
+    if(ok){
+      try{ localStorage.removeItem(LS_DATA); }catch(e){} // free the old quota-bound copy
+      const note = document.getElementById('cache-note'); if(note) note.remove();
+      return;
+    }
+    persistCacheLocalStorage();
+  });
+}
+function persistCacheLocalStorage(){
+  try{
+    appData.extrasStripped = false;
+    localStorage.setItem(LS_DATA, JSON.stringify(appData));
+  }
+  catch(e){
+    // Quota — keep small high-value extras (Borough, School or Park, Code…), drop only bulky
+    // values like Direct Link URLs, and flag the state so the UI can say so.
+    try{
+      appData.extrasStripped = true;
+      const slim = Object.assign({}, appData, { merged: appData.merged.map(r => {
+        const c = Object.assign({}, r);
+        if(c._extra){
+          const kept = {};
+          for(const k of Object.keys(c._extra)){
+            if(!/link|url/i.test(k) && String(c._extra[k]).length <= 40) kept[k] = c._extra[k];
+          }
+          c._extra = kept;
+        }
+        return c;
+      }) });
+      localStorage.setItem(LS_DATA, JSON.stringify(slim));
+      console.warn('cache saved with trimmed extra columns (storage quota)', e);
+    }catch(e2){ console.warn('cache save failed', e2); }
+  }
+}
+function renderCacheNote(){
+  let note = document.getElementById('cache-note');
+  if(!appData.extrasStripped){ if(note) note.remove(); return; }
+  if(!note){
+    note = document.createElement('div');
+    note.id = 'cache-note';
+    note.style.cssText = 'background:#fdf6e3; border:1px solid var(--warn); color:#7a5a12; border-radius:8px; padding:9px 14px; margin-bottom:12px; font-size:.78em;';
+    document.getElementById('status-line').insertAdjacentElement('afterend', note);
+  }
+  note.textContent = 'Note: cached data was trimmed to fit browser storage — some bulky extra columns (like Direct Link) will restore on the next live refresh.';
+}
+async function loadCache(){
+  const fromIdb = await idbGet('appData');
+  if(fromIdb && fromIdb.merged){
+    appData = Object.assign({ changeLog: [], lastDiffCount: 0 }, fromIdb); SURV = null;
+    return;
+  }
+  try{
+    const raw = JSON.parse(localStorage.getItem(LS_DATA) || 'null');
+    if(raw && raw.merged){
+      appData = Object.assign({ changeLog: [], lastDiffCount: 0 }, raw); SURV = null;
+      idbSet('appData', raw); // migrate the old localStorage cache into IndexedDB
+    }
+  }catch(e){}
+}
+
+/* ============================== STATUS / LOADING ============================== */
+function setStatus(msg, refreshing){
+  document.getElementById('status-text').textContent = msg + (appData.lastRefresh ? '  ·  last refresh ' + new Date(appData.lastRefresh).toLocaleString() : '');
+  const btn = document.getElementById('btn-refresh');
+  if(btn) btn.disabled = !!refreshing;
+}
+
+/* ============================== LAG MODELS ============================== */
+/* Both lags have drifted way worse over time, so lifetime averages lowball reality.
+   Forecasts use only the most RECENT window of data points to track the current pace. */
+const PAY_LAG_WINDOW = 20;    // last N paid requests
+const HEAR_LAG_WINDOW = 50;   // last N complaints that received hearing dates
+const PAY_LAG_FALLBACK = 210; // user-observed current request→paid lag, used only with no data
+
+function avgOf(list){ return list.reduce((s,v)=>s+v,0)/list.length; }
+
+function getLagModels(){
+  const all = appData.merged;
+  // request → paid. MEDIAN of conversions whose REQUEST was made in the current era
+  // (last 24 months), newest requests first. Mean-of-recently-paid was skewed a year high:
+  // recently-paid includes long-stuck stragglers, and early-2023 requests are anomalies.
+  const now2 = Date.now();
+  const pay = all.filter(r => r._inPaidLog && r.requestedDate && r.paidDate).map(r => {
+    const a = parseDate(r.requestedDate), b = parseDate(r.paidDate);
+    return (a && b && b >= a) ? { when: a, lag: (b-a)/86400000 } : null;
+  }).filter(x => x && (now2 - x.when) <= 730*86400000).sort((x,y)=>y.when-x.when);
+  const payRecent = pay.slice(0, 30).map(x=>x.lag).sort((a,b)=>a-b);
+  const payAvg = payRecent.length >= 5
+    ? payRecent[Math.floor(payRecent.length/2)]   // median
+    : PAY_LAG_FALLBACK;
+  // submission → hearing. Recent months are mostly UNreviewed, and the few reviewed rows in
+  // a partial month are survivor-biased (only the fast ones came back). So: bucket by incident
+  // month, find the most recent month where a MAJORITY got hearing dates, and use lag data
+  // from that month (pooling backward through consistent months until n≥10).
+  const hearMonths = {}; // key -> {lags:[], total:0}
+  for(const r of all){
+    const inc = incidentDateOf(r);
+    if(!inc) continue;
+    const mk = inc.getFullYear() + '-' + String(inc.getMonth()+1).padStart(2,'0');
+    const bucket = (hearMonths[mk] = hearMonths[mk] || {lags:[], total:0});
+    bucket.total++;
+    const a = parseDate(r.dateSubmitted) || inc, b = parseDate(r.hearingDate);
+    if(b && b >= a) bucket.lags.push((b-a)/86400000);
+  }
+  const monthKeysDesc = Object.keys(hearMonths).sort().reverse();
+  let pooled = [], anchorMonth = null;
+  for(const mk of monthKeysDesc){
+    const bkt = hearMonths[mk];
+    const consistent = bkt.total >= 5 && (bkt.lags.length / bkt.total) >= 0.5;
+    if(!anchorMonth && !consistent) continue;   // skip partial recent months entirely
+    if(!consistent) break;                       // stop once past the consistent streak
+    if(!anchorMonth) anchorMonth = mk;
+    pooled = pooled.concat(bkt.lags);
+    if(pooled.length >= 10) break;
+  }
+  let hearAvg = null, hearN = 0, hearNote = '';
+  if(pooled.length){
+    hearAvg = avgOf(pooled); hearN = pooled.length;
+    hearNote = 'from ' + anchorMonth + ', the last consistently-reviewed month';
+  } else {
+    // fallback: nothing consistent yet — recent 50 pairs, better than nothing
+    const hear = all.map(r => {
+      const a = parseDate(r.dateSubmitted), b = parseDate(r.hearingDate);
+      return (a && b && b >= a) ? { when: a, lag: (b-a)/86400000 } : null;
+    }).filter(Boolean).sort((x,y)=>y.when-x.when).slice(0, HEAR_LAG_WINDOW);
+    if(hear.length){ hearAvg = avgOf(hear.map(x=>x.lag)); hearN = hear.length; hearNote = 'recent pairs (no consistent month yet)'; }
+  }
+  return {
+    payment: { avg: payAvg, n: payRecent.length || pay.length },
+    hearing: { avg: hearAvg, n: hearN, note: hearNote }
+  };
+}
+
+/* ============================== RENDER: HOME ============================== */
+let homeSort = { key:'incident', dir:-1 };
+let EST_HEARING = null; // set per render pass from getLagModels().hearing
+const HOME_CHUNK = 600; let homeRenderToken = 0;
+
+/* Row background: the "no hearing date" light-blue override is applied at render time —
+   if a row has no Hearing Date and isn't disqualified/dismissed/submitted, it displays
+   light blue regardless of whatever color it would otherwise have gotten. */
+function rowClass(rec){
+  const t = rec._rowType;
+  if(!rec.hearingDate && t !== 'disqualified' && t !== 'dismissed' && t !== 'submitted') return 'row-nohearing';
+  if(t === 'none') return '';
+  return 'row-' + t;
+}
+function bucketBadgeClass(t){
+  return t === 'disqualified' ? 'disq' : t;
+}
+function bucketLabel(t){
+  const labels = { paid:'Paid', requested:'Requested', submitted:'Submitted', dismissed:'Dismissed', disqualified:'Disqualified', none:'—' };
+  return labels[t] || '—';
+}
+
+const HOME_COLUMNS = [
+  { k:'incident',        label:'Incident',         extra:false, render:r => {
+      const d = incidentDateOf(r);
+      return d ? `<span title="From ${esc(r.clipFrom)||'(submission date)'}${r.clipTo?' · To '+esc(r.clipTo):''}">${d.toLocaleDateString()} ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</span>` : '—';
+    } },
+  { k:'complaintNumber', label:'Complaint #',      extra:false, render:r => complaintCell(r) },
+  { k:'dataset',         label:'Dataset',          extra:false, render:r => `<span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span>` },
+  { k:'summons',         label:'Summons #',        extra:false, render:r => esc(r.summons)||'—' },
+  { k:'company',         label:'Company',          extra:false, render:r => {
+      const c = r.company || '';
+      if(!c) return '—';
+      const title = c + (r.companyNorm !== c.toUpperCase().trim() ? ' · canonical: ' + r.companyNorm : '');
+      return `<span title="${esc(title)}">${esc(c.length > 30 ? c.slice(0,30) + '…' : c)}</span>`;
+    } },
+  { k:'location',        label:'Location',         extra:false, render:r => {
+      const loc = r.location || '';
+      if(!loc) return '—';
+      return `<span title="${esc(loc)}">${esc(loc.length > 25 ? loc.slice(0,25) + '…' : loc)}</span>`;
+    } },
+  { k:'hearingDate',     label:'Hearing Date',     extra:false, render:r => {
+      if(r.hearingDate) return esc(r.hearingDate);
+      if(r._rowType === 'disqualified' || r._rowType === 'dismissed') return '—';
+      if(!EST_HEARING || EST_HEARING.avg == null) return '—';
+      const sub = parseDate(r.dateSubmitted);
+      if(!sub) return '—';
+      const est = new Date(sub.getTime() + EST_HEARING.avg * 86400000);
+      if(est < new Date()){
+        const od = Math.floor((Date.now() - est.getTime()) / 86400000);
+        return `<span class="est overdue" title="Estimated hearing date passed ~${od} days ago (based on recent submission→hearing lag of ~${Math.round(EST_HEARING.avg)}d) — worth checking if this one is stuck">overdue ~${od}d</span>`;
+      }
+      return `<span class="est" title="Estimate: submission + recent avg submission→hearing lag (~${Math.round(EST_HEARING.avg)}d, n=${EST_HEARING.n}, ${EST_HEARING.note})">~${fmtDateMDY(est)}</span>`;
+    } },
+  { k:'hearingStatus',   label:'Hearing Status',   extra:false, render:r => esc(r.hearingStatus)||'—' },
+  { k:'hearingResult',   label:'Hearing Result',   extra:false, render:r => esc(r.hearingResult)||'—' },
+  { k:'paidAmount',      label:'Paid Amt',         extra:false, render:r => money(r.paidAmount) },
+  { k:'payout',          label:'My Payout',        extra:false, render:r => money(r.payout) },
+  { k:'_rowType',        label:'Status',           extra:false, render:r => `<span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>` },
+  { k:'dateSubmitted',   label:'Date Submitted',   extra:true,  render:r => esc(r.dateSubmitted)||'—' },
+  { k:'licensePlate',    label:'Plate',            extra:true,  render:r => esc(r.licensePlate)||'—' },
+  { k:'licenseState',    label:'State',            extra:true,  render:r => esc(r.licenseState)||'—' },
+  { k:'violationAmount', label:'Violation Amt',    extra:true,  render:r => money(r.violationAmount) },
+  { k:'penaltyImposed',  label:'Penalty Imposed',  extra:true,  render:r => money(r.penaltyImposed) },
+  { k:'additionalPenalty',label:'Addl Penalty',    extra:true,  render:r => money(r.additionalPenalty) },
+  { k:'offense',         label:'Offense',          extra:true,  render:r => r.offense > 1 ? `<b>${r.offense === 2 ? '2nd' : '3rd'}</b> ($${FINE_BY_OFFENSE[r.offense]})` : '1st' },
+  { k:'description',     label:'Description',      extra:true,  render:r => {
+      const t = r.description || '';
+      if(!t) return '—';
+      return `<span title="${esc(t)}">${esc(t.length > 40 ? t.slice(0,40) + '…' : t)}</span>`;
+    } },
+  { k:'complianceStatus',label:'Compliance',       extra:true,  render:r => esc(r.complianceStatus)||'—' },
+  { k:'_daysToHearing',  label:'Days to Hearing',  extra:true,  render:r => {
+      const a = parseDate(r.dateSubmitted), b = parseDate(r.hearingDate);
+      return (a && b && b >= a) ? Math.round((b-a)/86400000) : '—';
+    } },
+  { k:'disqualReason',   label:'Disqual. Reason',  extra:true,  render:r => esc(r.disqualReason)||'—' },
+  { k:'latitude',        label:'Lat',              extra:true,  render:r => esc(r.latitude)||'—' },
+  { k:'longitude',       label:'Long',             extra:true,  render:r => esc(r.longitude)||'—' },
+  { k:'clipFrom',        label:'Clip From',        extra:true,  render:r => esc(r.clipFrom)||'—' },
+  { k:'clipTo',          label:'Clip To',          extra:true,  render:r => esc(r.clipTo)||'—' },
+  { k:'updatedAt',       label:'Updated',          extra:true,  render:r => esc(r.updatedAt)||'—' }
+];
+
+// Union of every unmapped sheet header seen across all rows -> dynamic expanded columns.
+function dynamicExtraCols(){
+  const keys = new Set();
+  for(const r of appData.merged){ if(r._extra) for(const k of Object.keys(r._extra)) keys.add(k); }
+  return [...keys].sort().filter(h => !/link|url/i.test(h)).map(h => ({
+    k: '_x:' + h, label: h, extra: true,
+    render: r => {
+      const v = (r._extra||{})[h];
+      if(!v) return '—';
+      if(/^https?:\/\//i.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">link ↗</a>`;
+      return `<span title="${esc(v)}">${esc(String(v).length > 40 ? String(v).slice(0,40)+'…' : v)}</span>`;
+    }
+  }));
+}
+
+function searchScore(rec, q){
+  if(!q) return 1;
+  q = q.toLowerCase();
+  const fields = [rec.company, rec.companyNorm, rec.summons, rec.complaintNumber, rec.licensePlate, rec.location, rec.description, rec.dataset];
+  let score = 0;
+  for(const f of fields){
+    if(!f) continue;
+    const lf = String(f).toLowerCase();
+    if(lf === q) score += 100;
+    else if(lf.startsWith(q)) score += 50;
+    else if(lf.includes(q)) score += 20;
+  }
+  return score;
+}
+
+function renderHome(){
+  const q = document.getElementById('home-search').value.trim();
+  const dsFilter = document.getElementById('home-filter-dataset').value;
+  const statusFilter = document.getElementById('home-filter-status').value;
+  const showExtra = document.getElementById('home-expand').checked;
+  const cols = HOME_COLUMNS.filter(c => showExtra || !c.extra).concat(showExtra ? dynamicExtraCols() : []);
+  EST_HEARING = getLagModels().hearing;
+
+  let rows = appData.merged.slice();
+  if(dsFilter) rows = rows.filter(r => normalizeDS(r.dataset) === normalizeDS(dsFilter));
+  if(statusFilter) rows = rows.filter(r => r._rowType === statusFilter);
+
+  if(q){
+    rows = rows.map(r => ({ r, s: searchScore(r,q) })).filter(x => x.s > 0).sort((a,b)=>b.s-a.s).map(x=>x.r);
+  } else {
+    const dateKeys = { incident:1, dateSubmitted:1, hearingDate:1, updatedAt:1 };
+    rows.sort((a,b) => {
+      let av, bv;
+      if(homeSort.key === 'incident'){ av = incidentDateOf(a); bv = incidentDateOf(b); }
+      else if(homeSort.key.startsWith('_x:')){ const h = homeSort.key.slice(3); av = (a._extra||{})[h]; bv = (b._extra||{})[h]; }
+      else { av = a[homeSort.key]; bv = b[homeSort.key]; }
+      if(dateKeys[homeSort.key]){
+        const ad = (av instanceof Date) ? av : parseDate(av), bd = (bv instanceof Date) ? bv : parseDate(bv);
+        // rows with missing/unparseable dates always sink to the bottom, whichever direction
+        if(!ad && !bd) return tieBreak(a,b);
+        if(!ad) return 1;
+        if(!bd) return -1;
+        av = ad.getTime(); bv = bd.getTime();
+      } else if(typeof av === 'number' || typeof bv === 'number'){
+        av = Number(av)||0; bv = Number(bv)||0;
+      } else {
+        av = String(av==null?'':av).toLowerCase(); bv = String(bv==null?'':bv).toLowerCase();
+      }
+      if(av < bv) return -1*homeSort.dir;
+      if(av > bv) return 1*homeSort.dir;
+      return tieBreak(a,b);
+    });
+  }
+  function tieBreak(a,b){
+    // same date/value: newest complaint number first (they're assigned sequentially)
+    return String(b.complaintNumber||'').localeCompare(String(a.complaintNumber||''), undefined, {numeric:true});
+  }
+
+  document.getElementById('home-count').textContent = rows.length + ' records';
+  const thead = document.querySelector('#home-table thead');
+  thead.innerHTML = '<tr>' + cols.map(c => `<th data-k="${c.k}">${c.label}</th>`).join('') + '</tr>';
+
+  // ALL rows render — first chunk paints immediately, the rest stream in so typing stays snappy.
+  const token = ++homeRenderToken;
+  const tbody = document.querySelector('#home-table tbody');
+  const rowHTML = r => `<tr class="${rowClass(r)}">` + cols.map(c => `<td>${c.render(r)}</td>`).join('') + '</tr>';
+  tbody.innerHTML = rows.slice(0, HOME_CHUNK).map(rowHTML).join('') ||
+    `<tr><td colspan="${cols.length}" class="empty">No matching records.</td></tr>`;
+  let next = HOME_CHUNK;
+  (function appendChunk(){
+    if(token !== homeRenderToken || next >= rows.length) return;
+    tbody.insertAdjacentHTML('beforeend', rows.slice(next, next + HOME_CHUNK).map(rowHTML).join(''));
+    next += HOME_CHUNK;
+    setTimeout(appendChunk, 0);
+  })();
+
+  document.getElementById('home-truncate-note').textContent = '';
+
+  renderHomeStats();
+}
+
+function renderHomeStats(){
+  const stats = document.getElementById('home-stats');
+  const all = appData.merged;
+  const total = all.length;
+
+  const paidRows = all.filter(r => r._rowType === 'paid');
+  const paidCount = paidRows.length;
+  // For already-paid rows, always use the real Paid To Me value; the formula is a fallback only.
+  const totalCollected = paidRows.reduce((s,r) => s + (r.paidToMe || r.payout || 0), 0);
+
+  // Pending Amount: expected payout summed across everything currently in Requested status.
+  const requestedRows = all.filter(r => r._rowType === 'requested');
+  const pendingAmount = requestedRows.reduce((s,r) => s + expectedPayoutFor(r), 0);
+
+  const paidPlusPending = totalCollected + pendingAmount;
+
+  // Estimated Grand Total: received + confirmed pending + survival-weighted open rows.
+  // This is a realistic forecast, not the old "every eligible row × historical average" ceiling.
+  const estGrandTotal = all.reduce((s,r) => s + expectedPayoutFor(r), 0);
+  const eligibleCount = all.filter(r => r._rowType !== 'disqualified' && r._rowType !== 'dismissed').length;
+
+  const byDataset = { AT:0, 'AT NYC':0, MBT:0 };
+  all.forEach(r => { const k = Object.keys(byDataset).find(k=>normalizeDS(k)===normalizeDS(r.dataset)); if(k) byDataset[k]++; });
+
+  stats.innerHTML = `
+    <div class="stat-card"><div class="label">Total Complaints</div><div class="value blue">${total.toLocaleString()}</div><div class="sub">every status, all identities</div></div>
+    <div class="stat-card"><div class="label">Paid</div><div class="value success">${paidCount.toLocaleString()}</div><div class="sub">${money(totalCollected)} collected</div></div>
+    <div class="stat-card"><div class="label">Pending Amount</div><div class="value orange">${money(pendingAmount)}</div><div class="sub">${requestedRows.length} requested, not yet received</div></div>
+    <div class="stat-card"><div class="label">Paid + Pending</div><div class="value blue">${money(paidPlusPending)}</div><div class="sub">in hand or in the pipeline</div></div>
+    <div class="stat-card" title="${(() => { const b = egtBreakdown(); const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×W', open:'Open ×W×T'}; return Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev)).join(' · '); })()}"><div class="label">Estimated Grand Total</div><div class="value orange">${money(estGrandTotal)}</div><div class="sub">hover for the full breakdown · ${eligibleCount.toLocaleString()} live rows</div></div>
+    <div class="stat-card"><div class="label">By Dataset</div><div class="value blue" style="font-size:.95em;">AT ${byDataset.AT} · AT NYC ${byDataset['AT NYC']} · MBT ${byDataset.MBT}</div></div>
+  `;
+}
+
+/* ============================== RENDER: NEW MONEY ============================== */
+function getNewMoneyRows(){
+  // Paid in full per NYC (loose match), but no entry in the user's Paid or Requested logs.
+  return appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFull(r));
+}
+
+function renderNewMoney(){
+  const newMoney = getNewMoneyRows();
+  const tbody1 = document.querySelector('#newmoney-table tbody');
+  tbody1.innerHTML = newMoney.map(r => `
+    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
+  ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
+
+  const payLag = getLagModels().payment;
+  const avgLag = payLag.avg;
+
+  const now = new Date();
+  const pendingReq = appData.merged.filter(r => r._rowType === 'requested').map(r => {
+    const reqDate = parseDate(r.requestedDate);
+    const daysWaiting = reqDate ? Math.floor((now - reqDate)/86400000) : -1;
+    const forecast = reqDate ? new Date(reqDate.getTime() + avgLag*86400000) : null;
+    const expected = expectedPayoutFor(r);
+    return Object.assign({}, r, { _daysWaiting: daysWaiting, _forecast: forecast, _expected: expected });
+  }).sort((a,b) => b._daysWaiting - a._daysWaiting);
+
+  const totalExpected = pendingReq.reduce((s,r) => s + r._expected, 0);
+  document.getElementById('pendreq-tag').textContent = `${money(totalExpected)} expected · sorted by longest wait first`;
+
+  const tbody2 = document.querySelector('#pending-req-table tbody');
+  tbody2.innerHTML = pendingReq.map(r => `
+    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+      <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${esc(r.requestedDate)||'—'}</td>
+      <td>${money(r._expected)}</td>
+      <td>${r._daysWaiting>=0 ? r._daysWaiting : '—'}</td>
+      <td>${r._forecast ? r._forecast.toLocaleDateString() : '—'}</td></tr>`
+  ).join('') || `<tr><td colspan="7" class="empty">No pending requests.</td></tr>`;
+
+  document.getElementById('newmoney-stats').innerHTML = `
+    <div class="stat-card"><div class="label">New Money Available</div><div class="value success">${newMoney.length}</div></div>
+    <div class="stat-card"><div class="label">Est. Value</div><div class="value orange">${money(newMoney.reduce((s,r)=>s+r.payout,0))}</div></div>
+    <div class="stat-card"><div class="label">Pending Requests</div><div class="value blue">${pendingReq.length}</div><div class="sub">${money(totalExpected)} expected</div></div>
+    <div class="stat-card"><div class="label">Avg. Payment Lag</div><div class="value blue">${avgLag.toFixed(0)} days</div><div class="sub">from your ${payLag.n} most recent paid requests</div></div>
+  `;
+}
+
+/* ============================== EXPORT FOR EMAIL (Groups of 8) ============================== */
+/* Faithful reproduction of the old app's feature: operates on rows whose hearing status is
+   EXACTLY 'paid in full' (stricter than the general New Money list's loose match — a known
+   discrepancy in the old app, preserved intentionally) with no Paid/Requested log entry. */
+function buildExportGroups(){
+  const eligible = appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFullExact(r));
+  const groups = [];
+  for(const dsKey of ['at','atnyc','mbt']){
+    const label = DATASET_LABELS[dsKey];
+    const list = eligible.filter(r => normalizeDS(r.dataset) === normalizeDS(label));
+    for(let i=0; i<list.length; i+=8){
+      groups.push({ dsKey, label, rows: list.slice(i, i+8) });
+    }
+  }
+  groups.forEach((g, idx) => g.number = idx + 1);
+  return groups;
+}
+
+function copyBlockHTML(title, text, id){
+  return `<div class="copy-block">
+    <div class="cb-head"><span>${esc(title)}</span><button class="btn ghost copy-btn" data-copy="${id}">📋 Copy</button></div>
+    <textarea readonly id="${id}" rows="${Math.min(10, Math.max(1, text.split('\n').length))}">${esc(text)}</textarea>
+  </div>`;
+}
+
+function renderExportModal(){
+  const groups = buildExportGroups();
+  const body = document.getElementById('export-body');
+  if(!groups.length){
+    body.innerHTML = `<div class="empty">No summonses currently match: hearing status exactly "Paid in Full" with no Requested/Paid entry.</div>`;
+    return;
+  }
+  const multi = groups.length > 1;
+  const today = new Date();
+  const dateStr = fmtDateMDY(today);
+  body.innerHTML = groups.map(g => {
+    const vendor = CFG.vendors[g.dsKey] || {code:'', name:'', address:''};
+    const summonsList = g.rows.map(r => r.summons).join('\n');
+    const subject = `Complaint Payment ${dateStr}${multi ? ' #' + g.number : ''}`;
+    const emailBody = `Hello, I am the citizen who submitted the complaint for the following paid summons through the Citizens Air Complaint Program:\n\nVendor Code: ${vendor.code}\n${vendor.name}\nMailing address: ${vendor.address}\n\n${summonsList}`;
+    const gmailSearch = g.rows.map(r => `"${r.summons}"`).join(' OR ');
+    const suffix = multi ? ` - #${g.number}` : '';
+    const sheetData = g.rows.map(r => `${r.summons}\t${dateStr}${suffix}`).join('\n');
+    return `<div class="export-group">
+      <b>Group ${g.number} — ${esc(g.label)} <span class="tag" style="font-weight:600; font-size:.7em; background:var(--panel2); padding:2px 8px; border-radius:12px; color:var(--dim);">${g.rows.length} summons${g.rows.length===1?'':'es'}</span></b>
+      ${copyBlockHTML('Email Subject', subject, `exp-subj-${g.number}`)}
+      ${copyBlockHTML('Email Body', emailBody, `exp-body-${g.number}`)}
+      ${copyBlockHTML('Gmail Search String', gmailSearch, `exp-gmail-${g.number}`)}
+      ${copyBlockHTML('Spreadsheet Data (paste into Google Sheets)', sheetData, `exp-sheet-${g.number}`)}
+    </div>`;
+  }).join('');
+
+  body.querySelectorAll('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ta = document.getElementById(btn.dataset.copy);
+      ta.select();
+      document.execCommand('copy');
+      const orig = btn.textContent;
+      btn.textContent = '✅ Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    });
+  });
+}
+
+/* ============================== RENDER: DISCREPANCIES ============================== */
+function renderDiscrepancies(){
+  const flagged = appData.merged.filter(r =>
+    r.paidAmount > 0 && !isPaidInFull(r) && !r._inPaidLog && !r._inReqLog
+  );
+  document.getElementById('disc-count').textContent = flagged.length + ' flagged';
+  document.querySelector('#disc-table tbody').innerHTML = flagged.map(r => `
+    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td>
+    <td>${esc(r.hearingStatus)||'—'}</td><td>${esc(r.complianceStatus)||'—'}</td></tr>`
+  ).join('') || `<tr><td colspan="6" class="empty">Nothing to reconcile — clean.</td></tr>`;
+
+}
+
+/* ============================== RENDER: CALENDAR ============================== */
+let calCursor = new Date();
+let calSelectedDay = null;
+let calUserNavigated = false;
+let weatherToken = 0;
+const LS_WEATHER = 'truckNarcWeather';
+
+/* Daily NYC hi/lo temps from Open-Meteo's free archive (no key needed). Past months are
+   immutable so they cache forever; the current month refreshes every 6 hours. */
+async function fetchMonthTemps(y, m){
+  const key = y + '-' + String(m+1).padStart(2,'0');
+  let cache = {};
+  try{ cache = JSON.parse(localStorage.getItem(LS_WEATHER) || '{}'); }catch(e){}
+  const now = new Date();
+  const isCurrent = now.getFullYear() === y && now.getMonth() === m;
+  if(cache[key] && (!isCurrent || Date.now() - cache[key].ts < 6*3600000)) return cache[key].days;
+  const start = key + '-01';
+  const endTs = Math.min(new Date(y, m+1, 0).getTime(), now.getTime() - 86400000);
+  if(new Date(start).getTime() > endTs) return {};
+  const end = localDayKey(new Date(endTs));
+  try{
+    const res = await fetch('https://archive-api.open-meteo.com/v1/archive?latitude=40.7128&longitude=-74.006&start_date=' + start + '&end_date=' + end + '&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=America%2FNew_York');
+    if(!res.ok) return {};
+    const j = await res.json();
+    const days = {};
+    ((j.daily && j.daily.time) || []).forEach((d,i) => {
+      const hi = j.daily.temperature_2m_max[i], lo = j.daily.temperature_2m_min[i];
+      if(hi != null && lo != null) days[d] = { hi: Math.round(hi), lo: Math.round(lo) };
+    });
+    cache[key] = { ts: Date.now(), days };
+    try{ localStorage.setItem(LS_WEATHER, JSON.stringify(cache)); }catch(e){}
+    return days;
+  }catch(e){ return {}; }
+}
+
+// LOCAL-time day key. The old build used toISOString() (UTC), which pushed any NYC
+// submission after ~8 PM into the next day's cell — that was the main "busted" bug.
+function localDayKey(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+// Shift inference from REAL From/To clip intervals: cluster incidents when the gap from
+// one clip's end to the next clip's start is 2.5hr+; multi-incident clusters get 30min
+// padding each side (+1h); a lone incident counts its clip span + 0.5h.
+function inferHours(entries){
+  entries = entries.slice().sort((a,b)=>a.from-b.from);
+  const shifts = [];
+  let start = entries[0].from, end = entries[0].to, count = 1;
+  for(let i=1;i<entries.length;i++){
+    const gapMin = (entries[i].from - end)/60000;
+    if(gapMin >= 150){ shifts.push({span:(end-start)/3600000, count}); start = entries[i].from; count = 0; }
+    if(entries[i].to > end || count === 0) end = entries[i].to;
+    count++;
+  }
+  shifts.push({span:(end-start)/3600000, count});
+  return shifts.reduce((s,sh) => s + Math.max(0, sh.span) + (sh.count > 1 ? 1 : 0.5), 0);
+}
+
+// Buckets by INCIDENT date (the From clip timestamp = when it actually happened).
+function calDayBuckets(rows){
+  const byDay = {};
+  for(const r of rows){
+    const from = incidentDateOf(r);
+    if(!from) continue;
+    let to = parseDate(r.clipTo);
+    if(!to || to < from) to = from;
+    const key = localDayKey(from);
+    (byDay[key] = byDay[key] || []).push({ from, to, rec: r });
+  }
+  return byDay;
+}
+
+function moneyShort(n){ return '$' + Math.round(Number(n)||0).toLocaleString(); }
+/* Leaflet (open-source maps) loads lazily from CDN the first time a day drilldown needs it. */
+let leafletLoading = null;
+let calMap = null;
+function loadLeaflet(){
+  if(window.L) return Promise.resolve(true);
+  if(leafletLoading) return leafletLoading;
+  leafletLoading = new Promise(res => {
+    try{
+      const css = document.createElement('link');
+      css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      const js = document.createElement('script');
+      js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      js.onload = () => res(true);
+      js.onerror = () => res(false);
+      document.head.appendChild(js);
+      setTimeout(() => res(!!window.L), 8000); // never hang if the CDN stalls silently
+    }catch(e){ res(false); }
+  });
+  return leafletLoading;
+}
+function renderDayMap(entries){
+  const pts = entries.map((e,i) => ({
+    lat: parseFloat(e.rec.latitude), lng: parseFloat(e.rec.longitude), e, i
+  })).filter(p => isFinite(p.lat) && isFinite(p.lng) && (p.lat !== 0 || p.lng !== 0));
+  const el = document.getElementById('cal-map');
+  if(!el) return;
+  if(!pts.length){ el.style.display = 'none'; return; }
+  loadLeaflet().then(ok => {
+    const mapEl = document.getElementById('cal-map'); // may have re-rendered while loading
+    if(!mapEl) return;
+    if(!ok || !window.L){ mapEl.innerHTML = '<div class="empty">Map couldn\'t load (offline?) — ' + pts.length + ' incidents have coordinates.</div>'; return; }
+    if(calMap){ try{ calMap.remove(); }catch(e){} calMap = null; }
+    calMap = L.map(mapEl);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(calMap);
+    // numbered pins in time order + a route line connecting them = replay of the shift
+    L.polyline(pts.map(p => [p.lat, p.lng]), { color: '#3d7cc9', weight: 3, opacity: 0.55, dashArray: '6 6' }).addTo(calMap);
+    pts.forEach((p, idx) => {
+      const r = p.e.rec;
+      L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: '<div class="map-pin">' + (idx+1) + '</div>', iconSize: [22,22], iconAnchor: [11,11] }) })
+        .addTo(calMap)
+        .bindPopup('<b>' + esc(p.e.from.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})) + '</b> · ' + esc(r.company) + '<br>' +
+                   esc(r.summons || ('Complaint ' + r.complaintNumber)) + ' · ' + bucketLabel(r._rowType) +
+                   (r.location ? '<br><span style="color:#777;">' + esc(r.location) + '</span>' : ''));
+    });
+    calMap.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.25));
+  });
+}
+
+// Calendar "received": actual payments PLUS requested amounts — requested is as good as paid.
+function calReceivedFor(rec){ return receivedFor(rec) + (rec._rowType === 'requested' ? expectedPayoutFor(rec) : 0); }
+
+function renderCalendar(){
+  const dsFilter = document.getElementById('cal-filter-dataset').value;
+  let rows = appData.merged.slice();
+  if(dsFilter) rows = rows.filter(r => normalizeDS(r.dataset) === normalizeDS(dsFilter));
+
+  const byDayAll = calDayBuckets(rows); // all months — needed for weekday averages + last-year comparison
+  // On first view, land on the most recent month that actually HAS data (e.g. July if August is empty)
+  if(!calUserNavigated){
+    const curPrefix = calCursor.getFullYear() + '-' + String(calCursor.getMonth()+1).padStart(2,'0');
+    const allKeys = Object.keys(byDayAll);
+    if(allKeys.length && !allKeys.some(k => k.startsWith(curPrefix))){
+      const latest = allKeys.sort().pop();
+      const [ly2, lm2] = latest.split('-').map(Number);
+      calCursor = new Date(ly2, lm2-1, 1);
+      calUserNavigated = true;
+      return renderCalendar();
+    }
+    calUserNavigated = allKeys.length > 0; // lock in once data exists
+  }
+  const y = calCursor.getFullYear(), m = calCursor.getMonth();
+  const monthPrefix = y + '-' + String(m+1).padStart(2,'0');
+  const lastYearPrefix = (y-1) + '-' + String(m+1).padStart(2,'0');
+
+  const dayStats = {};
+  let monthHours = 0, monthEst = 0, monthReceived = 0, monthFilings = 0;
+  let lyReceived = 0, lyFilings = 0;
+  for(const key of Object.keys(byDayAll)){
+    const entries = byDayAll[key];
+    if(key.startsWith(lastYearPrefix)){
+      lyFilings += entries.length;
+      lyReceived += entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
+    }
+    if(!key.startsWith(monthPrefix)) continue;
+    const hours = inferHours(entries);
+    const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
+    const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
+    dayStats[key] = { hours, est, received, count: entries.length };
+    monthHours += hours; monthEst += est; monthReceived += received; monthFilings += entries.length;
+  }
+
+  document.getElementById('cal-label').textContent = calCursor.toLocaleString(undefined,{month:'long', year:'numeric'});
+  // month/year dropdowns — jump anywhere in one click; year range spans the data
+  const monthSel = document.getElementById('cal-month');
+  monthSel.innerHTML = Array.from({length:12},(_,i)=>`<option value="${i}"${i===m?' selected':''}>${new Date(2000,i,1).toLocaleString(undefined,{month:'long'})}</option>`).join('');
+  const dataYears = Object.keys(byDayAll).map(k=>+k.slice(0,4));
+  const minY = Math.min(2022, ...(dataYears.length?dataYears:[y])), maxY = Math.max(new Date().getFullYear(), y);
+  const yearSel = document.getElementById('cal-year');
+  let yOpts = '';
+  for(let yy=maxY; yy>=minY; yy--) yOpts += `<option value="${yy}"${yy===y?' selected':''}>${yy}</option>`;
+  yearSel.innerHTML = yOpts;
+  const lyLabel = calCursor.toLocaleString(undefined,{month:'short'}) + ' ' + (y-1);
+  document.getElementById('cal-stats').innerHTML = `
+    <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${monthFilings}</div><div class="sub">vs ${lyFilings} in ${lyLabel}</div></div>
+    <div class="stat-card"><div class="label">Active Days</div><div class="value blue">${Object.keys(dayStats).length}</div></div>
+    <div class="stat-card"><div class="label">Hours Worked</div><div class="value blue">${monthHours.toFixed(1)}</div><div class="sub">from clip From/To clusters</div></div>
+    <div class="stat-card"><div class="label">Estimated From Month</div><div class="value orange">${money(monthEst)}</div><div class="sub">offense-aware expected payouts</div></div>
+    <div class="stat-card"><div class="label">Received So Far</div><div class="value success">${money(monthReceived)}</div><div class="sub">incl. requested (as good as paid) · vs ${money(lyReceived)} in ${lyLabel} · ${monthEst>0 ? (monthReceived/monthEst*100).toFixed(0)+'% of est.' : '—'}</div></div>
+  `;
+
+  const heads = document.getElementById('cal-heads');
+  heads.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('');
+
+  const maxEst = Math.max(0, ...Object.values(dayStats).map(x=>x.est));
+  const grid = document.getElementById('cal-grid');
+  const startDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  let cells = '';
+  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty-day"></div>`;
+  for(let day=1; day<=daysInMonth; day++){
+    const key = monthPrefix + '-' + String(day).padStart(2,'0');
+    const s = dayStats[key];
+    // red→green heat by ESTIMATED amount: the month's biggest expected-money day glows green
+    let tint = '';
+    if(s){
+      const ratio = maxEst > 0 ? Math.min(1, s.est/maxEst) : 0;
+      tint = `style="background:hsla(${Math.round(ratio*120)}, 65%, 45%, 0.22);"`;
+    }
+    const sel = (key === calSelectedDay) ? ' selected' : '';
+    cells += `<div class="cal-cell${sel}" data-date="${key}" ${s ? `data-day="${key}"` : ''} ${tint}>
+      <div class="d">${day}<span class="wx"></span></div>
+      ${s ? `<div class="cnt">${s.count}</div><div class="sub2">${s.hours.toFixed(1)}h</div><div class="sub2">est ${moneyShort(s.est)}</div><div class="sub2">rec'd ${moneyShort(s.received)}</div>` : ''}
+    </div>`;
+  }
+  grid.innerHTML = cells;
+
+  // temperatures arrive async and patch into the cells (token guards against month changes)
+  const wxToken = ++weatherToken;
+  fetchMonthTemps(y, m).then(days => {
+    if(wxToken !== weatherToken) return;
+    for(const dk of Object.keys(days)){
+      const cell = grid.querySelector(`[data-date="${dk}"] .wx`);
+      if(cell) cell.textContent = ` ${days[dk].hi}°/${days[dk].lo}°`;
+    }
+  });
+
+  // Lifetime weekday averages: incidents per ACTIVE day of each weekday (respects dataset filter)
+  const dowTotals = [0,0,0,0,0,0,0], dowActiveDays = [0,0,0,0,0,0,0];
+  for(const key of Object.keys(byDayAll)){
+    const [ky,km,kd] = key.split('-').map(Number);
+    const dow = new Date(ky, km-1, kd).getDay();
+    dowTotals[dow] += byDayAll[key].length;
+    dowActiveDays[dow]++;
+  }
+  document.getElementById('cal-weekday-avg').innerHTML =
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((d,i) =>
+      `<div>${d} avg<b>${dowActiveDays[i] ? (dowTotals[i]/dowActiveDays[i]).toFixed(1) : '—'}</b></div>`
+    ).join('');
+
+  // Day drilldown with daily totals
+  const drill = document.getElementById('cal-drill');
+  if(calSelectedDay && byDayAll[calSelectedDay] && calSelectedDay.startsWith(monthPrefix)){
+    const entries = byDayAll[calSelectedDay].slice().sort((a,b)=>a.from-b.from);
+    const s = dayStats[calSelectedDay];
+    const [ky,km,kd] = calSelectedDay.split('-').map(Number);
+    const outstanding = Math.max(0, s.est - s.received);
+    const byType = {};
+    entries.forEach(e => byType[e.rec._rowType] = (byType[e.rec._rowType]||0)+1);
+    const typeStr = Object.keys(byType).map(t => `${bucketLabel(t)} ${byType[t]}`).join(' · ');
+    drill.style.display = '';
+    drill.innerHTML = `<h3>${new Date(ky,km-1,kd).toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric', year:'numeric'})}</h3>
+      <div class="grid" style="margin-bottom:10px;">
+        <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${s.count}</div><div class="sub">${typeStr}</div></div>
+        <div class="stat-card"><div class="label">Hours</div><div class="value blue">${s.hours.toFixed(1)}</div></div>
+        <div class="stat-card"><div class="label">Estimated Total</div><div class="value orange">${money(s.est)}</div></div>
+        <div class="stat-card"><div class="label">Received</div><div class="value success">${money(s.received)}</div><div class="sub">${s.est>0 ? (s.received/s.est*100).toFixed(0)+'% collected' : '—'}</div></div>
+        <div class="stat-card"><div class="label">Still Outstanding</div><div class="value danger">${money(outstanding)}</div></div>
+      </div>
+      <div id="cal-map"></div>` +
+      entries.map(e => {
+        const r = e.rec;
+        return `<div class="chg-item">
+          <div class="when">${e.from.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}${(e.to>e.from)?'–'+e.to.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):''}</div>
+          <div class="what">
+            <span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span>
+            <span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>
+            ${r.offense>1?`<span class="badge disq">${r.offense===2?'2nd':'3rd'} offense</span>`:''}
+            <b>${esc(r.summons || ('Complaint ' + r.complaintNumber))}</b> · ${esc(r.company)}
+            <span class="delta"> — est ${money(expectedPayoutFor(r))}${calReceivedFor(r)?', received '+money(calReceivedFor(r)):''}</span>
+          </div>
+        </div>`;
+      }).join('');
+    renderDayMap(entries);
+  } else {
+    drill.style.display = 'none';
+    drill.innerHTML = '';
+    if(calMap){ try{ calMap.remove(); }catch(e){} calMap = null; }
+  }
+}
+
+/* ============================== RENDER: STATS ============================== */
+function hbar(label, value, max, text, color, title){
+  const w = max > 0 ? Math.max(1.5, (value/max)*100) : 0;
+  return `<div class="hb" ${title?`title="${esc(title)}"`:''}>
+    <div class="hb-label" title="${esc(label)}">${esc(label)}</div>
+    <div class="hb-track"><div class="hb-fill" style="width:${w}%; background:${color||'var(--blue)'};"></div></div>
+    <div class="hb-val">${text}</div>
+  </div>`;
+}
+function lineChartSVG(points){
+  const W = 940, H = 240, padL = 44, padR = 12, padT = 14, padB = 34;
+  const maxV = Math.max(1, ...points.map(p=>p.value));
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const x = i => padL + (points.length > 1 ? i/(points.length-1)*iw : iw/2);
+  const yv = v => padT + ih - (v/maxV)*ih;
+  const pts = points.map((p,i) => `${x(i).toFixed(1)},${yv(p.value).toFixed(1)}`).join(' ');
+  const step = Math.max(1, Math.floor(points.length/12));
+  const labels = points.map((p,i) => i % step === 0 || i === points.length-1
+    ? `<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle">${esc(p.label)}</text>` : '').join('');
+  const grid = [0,.25,.5,.75,1].map(f =>
+    `<line class="gridline" x1="${padL}" y1="${yv(maxV*f).toFixed(1)}" x2="${W-padR}" y2="${yv(maxV*f).toFixed(1)}"/>` +
+    `<text x="${padL-6}" y="${(yv(maxV*f)+4).toFixed(1)}" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
+  const dots = points.map((p,i) => `<circle cx="${x(i).toFixed(1)}" cy="${yv(p.value).toFixed(1)}" r="2.5"><title>${esc(p.label)}: ${p.value}</title></circle>`).join('');
+  return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}<polyline points="${pts}"/>${dots}${labels}</svg>`;
+}
+function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabel(key){ const [y,m] = key.split('-').map(Number); return new Date(y, m-1, 1).toLocaleString(undefined,{month:'short', year:'2-digit'}); }
+function lastMonths(map, n){
+  return Object.keys(map).sort().slice(-n);
+}
+
+function renderStats(){
+  const all = appData.merged;
+  const RESOLVED = { paid:1, requested:1, disqualified:1, dismissed:1 };
+
+  /* --- Success funnel: overall + per identity, stacked bars --- */
+  const FUNNEL_ORDER = [
+    ['paid','#218a4c','Paid'], ['requested','#e0aa2e','Requested'], ['submitted','#9b7fe0','Submitted'],
+    ['indefault','#c2703d','In Default'], ['none','#7fb3e8','Open'],
+    ['disqualified','#e07b70','Disqualified'], ['dismissed','#d9534f','Dismissed']
+  ];
+  // "Open" cases that are actually sitting in DEFAULT (finding exists, unpaid) get their own segment
+  const funnelKey = r => (r._rowType === 'none' && categorize(r) === 'defaulted') ? 'indefault' : r._rowType;
+  const funnelRow = (label, rows) => {
+    const total = rows.length || 1;
+    const counts = {};
+    rows.forEach(r => counts[funnelKey(r)] = (counts[funnelKey(r)]||0)+1);
+    const segs = FUNNEL_ORDER.map(([k,c]) => {
+      const n = counts[k]||0;
+      return n ? `<div style="width:${(n/total*100)}%; background:${c};" title="${FUNNEL_ORDER.find(f=>f[0]===k)[2]}: ${n} (${(n/total*100).toFixed(1)}%)"></div>` : '';
+    }).join('');
+    const legend = FUNNEL_ORDER.map(([k,c,name]) => {
+      const n = counts[k]||0;
+      return n ? `<span style="margin-right:12px;"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${c};margin-right:4px;"></i>${name} ${n} (${(n/total*100).toFixed(1)}%)</span>` : '';
+    }).join('');
+    return `<div style="margin-bottom:12px;"><b style="font-size:.85em;">${esc(label)} — ${rows.length.toLocaleString()} filings</b><div class="stack">${segs}</div><div class="stack-legend">${legend}</div></div>`;
+  };
+  document.getElementById('stats-funnel').innerHTML =
+    funnelRow('All Identities', all) +
+    ['AT','AT NYC','MBT'].map(ds => funnelRow(ds, all.filter(r => normalizeDS(r.dataset)===normalizeDS(ds)))).join('');
+
+  /* --- Collected by Month: paid + pending, grouped by INCIDENT month --- */
+  const colByMonth = {};
+  all.forEach(r => {
+    const d = incidentDateOf(r); if(!d) return;
+    const v = receivedFor(r) + (r._rowType === 'requested' ? expectedPayoutFor(r) : 0);
+    if(v > 0) colByMonth[monthKey(d)] = (colByMonth[monthKey(d)]||0) + v;
+  });
+  const revKeys = Object.keys(colByMonth).sort();
+  const revMax = Math.max(0, ...revKeys.map(k=>colByMonth[k]));
+  document.getElementById('stats-revenue').innerHTML =
+    revKeys.map(k => hbar(monthLabel(k), colByMonth[k], revMax, money(colByMonth[k]), 'var(--success)')).join('') ||
+    '<div class="empty">No collected or pending money yet.</div>';
+
+  /* --- Incident volume by month --- */
+  const volByMonth = {};
+  all.forEach(r => { const d = incidentDateOf(r); if(d) volByMonth[monthKey(d)] = (volByMonth[monthKey(d)]||0)+1; });
+  const volKeys = Object.keys(volByMonth).sort();
+  const volMax = Math.max(0, ...volKeys.map(k=>volByMonth[k]));
+  document.getElementById('stats-volume').innerHTML =
+    volKeys.map(k => hbar(monthLabel(k), volByMonth[k], volMax, volByMonth[k].toLocaleString(), 'var(--blue)')).join('') ||
+    '<div class="empty">No incidents parsed.</div>';
+
+  /* --- Top Days & Top Weeks (Sun–Sat), by incident count --- */
+  const byDay = {}, byWeek = {};
+  all.forEach(r => {
+    const d = incidentDateOf(r); if(!d) return;
+    const dk = localDayKey(d);
+    (byDay[dk] = byDay[dk] || {n:0, est:0, rec:0});
+    byDay[dk].n++; byDay[dk].est += expectedPayoutFor(r); byDay[dk].rec += receivedFor(r);
+    const sun = new Date(d); sun.setDate(d.getDate() - d.getDay()); // back to Sunday
+    const wk = localDayKey(sun);
+    (byWeek[wk] = byWeek[wk] || {n:0, est:0, rec:0});
+    byWeek[wk].n++; byWeek[wk].est += expectedPayoutFor(r); byWeek[wk].rec += receivedFor(r);
+  });
+  const fmtDayKey = k => { const [ky,km,kd] = k.split('-').map(Number); return new Date(ky,km-1,kd).toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'2-digit'}); };
+  const fmtWeekKey = k => {
+    const [ky,km,kd] = k.split('-').map(Number);
+    const sun = new Date(ky,km-1,kd), sat = new Date(ky,km-1,kd+6);
+    return sun.toLocaleDateString(undefined,{month:'short', day:'numeric'}) + '–' + sat.toLocaleDateString(undefined,{month:'short', day:'numeric', year:'2-digit'});
+  };
+  const topDays = Object.keys(byDay).sort((a,b)=>byDay[b].n-byDay[a].n).slice(0,10);
+  const tdMax = Math.max(0, ...topDays.map(k=>byDay[k].n));
+  document.getElementById('stats-topdays').innerHTML =
+    topDays.map(k => hbar(fmtDayKey(k), byDay[k].n, tdMax, `${byDay[k].n} · est ${moneyShort(byDay[k].est)}`, 'var(--blue)')).join('') || '<div class="empty">No data.</div>';
+  const topWeeks = Object.keys(byWeek).sort((a,b)=>byWeek[b].n-byWeek[a].n).slice(0,10);
+  const twMax = Math.max(0, ...topWeeks.map(k=>byWeek[k].n));
+  document.getElementById('stats-topweeks').innerHTML =
+    topWeeks.map(k => hbar(fmtWeekKey(k), byWeek[k].n, twMax, `${byWeek[k].n} · est ${moneyShort(byWeek[k].est)}`, 'var(--orange2)')).join('') || '<div class="empty">No data.</div>';
+
+  /* --- Cohort funnel: stacked outcome bar per incident month --- */
+  const cohorts = {};
+  all.forEach(r => { const d = incidentDateOf(r); if(d) (cohorts[monthKey(d)] = cohorts[monthKey(d)] || []).push(r); });
+  document.getElementById('stats-cohorts').innerHTML =
+    Object.keys(cohorts).sort().reverse()
+      .filter(k => cohorts[k].length >= 20 || k === '2025-08')
+      .map(k => funnelRow(monthLabel(k), cohorts[k])).join('') || '<div class="empty">No months with 20+ filings yet.</div>';
+
+  /* --- Top 10 hour blocks: an incident counts in every on-the-hour block its From–To touches --- */
+  const hourBlocks = {};
+  all.forEach(r => {
+    const from = incidentDateOf(r); if(!from) return;
+    let to = parseDate(r.clipTo); if(!to || to < from) to = from;
+    const start = new Date(from); start.setMinutes(0,0,0);
+    for(let t = start.getTime(); t <= to.getTime(); t += 3600000){
+      const h = new Date(t);
+      // keyed per dataset — an hour block never merges incidents across two identities
+      const key = localDayKey(h) + 'T' + h.getHours() + '|' + r.dataset;
+      hourBlocks[key] = (hourBlocks[key]||0) + 1;
+    }
+  });
+  const fmtHourKey = k => {
+    const [rest, ds] = k.split('|');
+    const [dk, hh] = rest.split('T');
+    const [ky,km,kd] = dk.split('-').map(Number);
+    const h = +hh;
+    const lbl = hr => ((hr%12)||12) + (hr<12?' AM':' PM');
+    return ds + ' · ' + new Date(ky,km-1,kd).toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'2-digit'}) + ', ' + lbl(h) + '–' + lbl((h+1)%24);
+  };
+  const topHours = Object.keys(hourBlocks).sort((a,b)=>hourBlocks[b]-hourBlocks[a]).slice(0,10);
+  const thMax = Math.max(0, ...topHours.map(k=>hourBlocks[k]));
+  document.getElementById('stats-hourblocks').innerHTML =
+    topHours.map(k => hbar(fmtHourKey(k), hourBlocks[k], thMax, hourBlocks[k] + ' witnessed', 'var(--purple)')).join('') || '<div class="empty">No data.</div>';
+
+  /* --- Boroughs (from master data) --- */
+  const xval = (r, name) => {
+    if(!r._extra) return '';
+    const want = normKey(name);
+    for(const k of Object.keys(r._extra)){ const nk = normKey(k); if(nk === want || nk.includes(want)) return r._extra[k]; }
+    return '';
+  };
+  const boros = {};
+  all.forEach(r => { const b = String(xval(r,'boro') || xval(r,'Borough')).trim(); if(b) boros[b] = (boros[b]||0)+1; });
+  const boroKeys = Object.keys(boros).sort((a,b)=>boros[b]-boros[a]);
+  const boroMax = Math.max(0, ...boroKeys.map(k=>boros[k]));
+  const boroTotal = Object.values(boros).reduce((s,v)=>s+v,0);
+  document.getElementById('stats-boroughs').innerHTML =
+    boroKeys.map(k => hbar(k, boros[k], boroMax, `${boros[k].toLocaleString()} (${(boros[k]/(boroTotal||1)*100).toFixed(1)}%)`, 'var(--blue)')).join('') ||
+    '<div class="empty">No Borough column found in the master data yet.</div>';
+
+  /* --- Offense tiers --- */
+  const off = {1:{n:0,est:0},2:{n:0,est:0},3:{n:0,est:0}};
+  all.forEach(r => { const o = off[r.offense||1]; o.n++; o.est += expectedPayoutFor(r); });
+  const offMax = Math.max(off[1].n, off[2].n, off[3].n);
+  document.getElementById('stats-offense').innerHTML =
+    [[1,'1st offense ($350)'],[2,'2nd offense ($450)'],[3,'3rd offense ($600)']].map(([t,lbl]) =>
+      hbar(lbl, off[t].n, offMax, `${off[t].n.toLocaleString()} · est ${moneyShort(off[t].est)}`, t===1?'var(--blue)':(t===2?'var(--warn)':'var(--danger)'))
+    ).join('');
+
+  /* --- School / Park adjacency: classify each place, standardize the names --- */
+  // Park-family words cover the reality that it isn't always "Park" — squares, playgrounds,
+  // plazas, gardens, greens, malls, triangles all count as park-side.
+  const PARK_WORDS = /\b(PARK|SQUARE|PLAYGROUND|PLAZA|GARDEN|GARDENS|GREEN|GREENWAY|COMMON|COMMONS|MALL|TRIANGLE|FIELD|FIELDS|PROMENADE|ESPLANADE|OVAL|LAWN|MEADOW|RECREATION)\b/;
+  const SCHOOL_WORDS = /\b(SCHOOL|ACADEMY|COLLEGE|UNIVERSITY|ELEMENTARY|KINDERGARTEN|PREP|YESHIVA|LYCEE|CAMPUS|EDUCATION|EDUCATIONAL|LEARNING|MONTESSORI|SEMINARY|CONSERVATORY|INSTITUTE)\b|^(PS|IS|MS|HS|JHS|CS)\s?\d/;
+  function normalizePlace(raw){
+    return String(raw).toUpperCase()
+      .replace(/[.,'’]/g,'')
+      .replace(/&/g,' AND ')
+      .replace(/\bSQ\b/g,'SQUARE')
+      .replace(/\bPLGD\b|\bPLAYGRND\b|\bPLYGD\b/g,'PLAYGROUND')
+      .replace(/\bP\s?S\s?(\d)/g,'PS $1')
+      .replace(/\bI\s?S\s?(\d)/g,'IS $1')
+      .replace(/\bM\s?S\s?(\d)/g,'MS $1')
+      .replace(/\bH\s?S\s?(\d)/g,'HS $1')
+      .replace(/^THE\s+/,'')
+      .replace(/\s+/g,' ').trim();
+  }
+  function classifyPlace(p){
+    if(SCHOOL_WORDS.test(p)) return 'school';
+    if(PARK_WORDS.test(p)) return 'park';
+    return 'other';
+  }
+  const places = {}; // normalized name -> {n, kind}
+  let nSchool = 0, nPark = 0, nOther = 0;
+  all.forEach(r => {
+    const raw = String(xval(r,'school') || xval(r,'School or Park')).trim();
+    if(!raw) return;
+    const p = normalizePlace(raw);
+    if(!p) return;
+    const kind = classifyPlace(p);
+    if(kind === 'school') nSchool++; else if(kind === 'park') nPark++; else nOther++;
+    (places[p] = places[p] || {n:0, kind}).n++;
+  });
+  const spTotal = nSchool + nPark + nOther;
+  document.getElementById('stats-school').innerHTML = spTotal ? `
+    <div class="grid" style="margin-bottom:6px;">
+      <div class="stat-card"><div class="label">Schools</div><div class="value blue">${nSchool.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">Parks</div><div class="value success">${nPark.toLocaleString()}</div></div>
+      ${nOther ? `<div class="stat-card"><div class="label">Other / Unclassified</div><div class="value orange">${nOther.toLocaleString()}</div></div>` : ''}
+    </div>
+    <p class="desc">${spTotal.toLocaleString()} of ${all.length.toLocaleString()} incidents (${(spTotal/all.length*100).toFixed(1)}%) were adjacent to a school or park.</p>` :
+    '<div class="empty">No School or Park data found in the master sheets yet.</div>';
+
+  /* --- Who Owes You: outstanding expected money by canonical company --- */
+  const owed = {};
+  all.forEach(r => {
+    if(r._rowType === 'paid' || r._rowType === 'requested' || r._rowType === 'disqualified' || r._rowType === 'dismissed') return;
+    if(isUnknownCo(r.companyNorm)) return;
+    const v = expectedPayoutFor(r);
+    if(v > 0.5){ (owed[r.companyNorm] = owed[r.companyNorm] || {v:0,n:0}); owed[r.companyNorm].v += v; owed[r.companyNorm].n++; }
+  });
+  const owedKeys = Object.keys(owed).sort((a,b)=>owed[b].v-owed[a].v).slice(0,15);
+  const owedMax = Math.max(0, ...owedKeys.map(k=>owed[k].v));
+  document.getElementById('stats-whoowes').innerHTML =
+    owedKeys.map(k => hbar(k, owed[k].v, owedMax, `${money(owed[k].v)} (${owed[k].n} open)`, 'var(--orange2)')).join('') ||
+    '<div class="empty">Nobody owes you anything right now. Suspicious.</div>';
+
+  /* --- Summons Volume Over Time: line graph of summonsed complaints per incident month --- */
+  const sumByMonth = {};
+  all.forEach(r => { if(!r.summons) return; const d = incidentDateOf(r); if(d) sumByMonth[monthKey(d)] = (sumByMonth[monthKey(d)]||0)+1; });
+  const smKeys = Object.keys(sumByMonth).sort();
+  document.getElementById('stats-summonsline').innerHTML = smKeys.length >= 2 ? lineChartSVG(smKeys.map(k=>({label:monthLabel(k), value:sumByMonth[k]}))) : '<div class="empty">Not enough months yet.</div>';
+
+  /* --- Revenue Over Time: vertical bars. Green = your 25% received. Yellow = the CEILING:
+     your 25% (capped at $250) if every outstanding summons paid in full. --- */
+  const revDual = {};
+  all.forEach(r => {
+    const d = incidentDateOf(r); if(!d) return;
+    const k = monthKey(d);
+    (revDual[k] = revDual[k] || {g:0,y:0});
+    revDual[k].g += receivedFor(r);
+    if(r._rowType !== 'paid' && r._rowType !== 'disqualified' && r._rowType !== 'dismissed')
+      revDual[k].y += computePayout(r.paidAmount || r.violationAmount || FINE_BY_OFFENSE[r.offense||1]);
+  });
+  const rdKeys = Object.keys(revDual).sort().filter(k => revDual[k].g > 0 || revDual[k].y > 0);
+  const rdMax = Math.max(0, ...rdKeys.map(k => Math.max(revDual[k].g, revDual[k].y)));
+  document.getElementById('stats-revovertime').innerHTML = rdKeys.length ? `<div class="vbars">` +
+    rdKeys.map(k => `<div class="vb-month" title="${monthLabel(k)} — received ${money(revDual[k].g)}, potential ${money(revDual[k].y)}">
+      <div class="vb-pair">
+        <i class="g" style="height:${rdMax?Math.max(1,revDual[k].g/rdMax*100):0}%;" title="${monthLabel(k)} received: ${money(revDual[k].g)}"></i>
+        <i class="y" style="height:${rdMax?Math.max(1,revDual[k].y/rdMax*100):0}%;" title="${monthLabel(k)} potential: ${money(revDual[k].y)}"></i>
+      </div>
+      <div class="vb-label">${monthLabel(k)}</div>
+    </div>`).join('') + `</div>` :
+    '<div class="empty">No data yet.</div>';
+
+  /* --- Disqualification / dismissal reasons ranked --- */
+  const reasons = {};
+  all.forEach(r => {
+    if(r._rowType === 'disqualified'){
+      const k = (r.disqualReason||'').trim();
+      if(k && k !== 'Disqualified (reason not specified)' && k.toLowerCase() !== 'disqualified') reasons[k] = (reasons[k]||0)+1;
+    } else if(r._rowType === 'dismissed'){
+      const detail = (r.hearingResult||'').trim();
+      if(detail) reasons['Dismissed — ' + detail] = (reasons['Dismissed — ' + detail]||0)+1;
+    }
+  });
+  const reasonKeys = Object.keys(reasons).sort((a,b)=>reasons[b]-reasons[a]).slice(0,12);
+  const reasonMax = Math.max(0, ...reasonKeys.map(k=>reasons[k]));
+  const totalDead = Object.values(reasons).reduce((s,v)=>s+v,0);
+  document.getElementById('stats-disq-tag').textContent = totalDead.toLocaleString() + ' dead filings';
+  document.getElementById('stats-disq').innerHTML =
+    reasonKeys.map(k => hbar(k, reasons[k], reasonMax, reasons[k] + ` (${(reasons[k]/ (totalDead||1)*100).toFixed(0)}%)`, 'var(--danger)')).join('') ||
+    '<div class="empty">No disqualified or dismissed filings. Nice.</div>';
+
+  /* --- Top companies (canonical names) — requested amounts count as good as paid --- */
+  const payByCo = {}, volByCo = {};
+  all.forEach(r => {
+    if(isUnknownCo(r.companyNorm)) return; // "Unknown" = not identified yet, not a company
+    volByCo[r.companyNorm] = (volByCo[r.companyNorm]||0)+1;
+    const v = receivedFor(r) + (r._rowType === 'requested' ? expectedPayoutFor(r) : 0);
+    if(v > 0) payByCo[r.companyNorm] = (payByCo[r.companyNorm]||0) + v;
+  });
+  const topPay = Object.keys(payByCo).sort((a,b)=>payByCo[b]-payByCo[a]).slice(0,10);
+  const topPayMax = Math.max(0, ...topPay.map(k=>payByCo[k]));
+  document.getElementById('stats-top-payout').innerHTML =
+    topPay.map(k => hbar(k, payByCo[k], topPayMax, money(payByCo[k]), 'var(--success)')).join('') || '<div class="empty">No payouts yet.</div>';
+  const topVol = Object.keys(volByCo).sort((a,b)=>volByCo[b]-volByCo[a]).slice(0,10);
+  const topVolMax = Math.max(0, ...topVol.map(k=>volByCo[k]));
+  document.getElementById('stats-top-volume').innerHTML =
+    topVol.map(k => hbar(k, volByCo[k], topVolMax, volByCo[k] + ' complaints', 'var(--orange2)')).join('');
+
+  /* --- Top 8 schools/parks by incident count (standardized names) --- */
+  const placeKeys = Object.keys(places).sort((a,b)=>places[b].n-places[a].n).slice(0,8);
+  const placeMax = Math.max(0, ...placeKeys.map(k=>places[k].n));
+  document.getElementById('stats-topplaces').innerHTML =
+    placeKeys.map(k => hbar(k, places[k].n, placeMax,
+      `${places[k].n.toLocaleString()} · ${places[k].kind === 'school' ? '🏫 school' : places[k].kind === 'park' ? '🌳 park' : '❔'}`,
+      places[k].kind === 'school' ? 'var(--blue)' : 'var(--success)')).join('') ||
+    '<div class="empty">No School or Park data yet.</div>';
+
+  /* --- Request→Paid lag over time (avg days by request month) --- */
+  const payLagByMonth = {};
+  all.filter(r => r._inPaidLog && r.requestedDate && r.paidDate).forEach(r => {
+    const a = parseDate(r.requestedDate), b = parseDate(r.paidDate);
+    if(!a || !b || b < a) return;
+    const k = monthKey(a);
+    (payLagByMonth[k] = payLagByMonth[k] || []).push((b-a)/86400000);
+  });
+  // 2023 request months are anomalies (money was requested long after the fact) — excluded.
+  const plKeys = lastMonths(payLagByMonth, 18).filter(k => k >= '2024-01');
+  const plAvgs = plKeys.map(k => avgOf(payLagByMonth[k]));
+  const plMax = Math.max(0, ...plAvgs);
+  document.getElementById('stats-paylag').innerHTML =
+    plKeys.map((k,i) => hbar(monthLabel(k), plAvgs[i], plMax, plAvgs[i].toFixed(0) + 'd (n=' + payLagByMonth[k].length + ')', 'var(--warn)')).join('') ||
+    '<div class="empty">Not enough request→paid pairs yet.</div>';
+
+  /* --- Submission→Hearing lag over time (bucketed by incident month; partial months flagged) --- */
+  const hearLagByMonth = {}; // k -> {lags, total}
+  all.forEach(r => {
+    const inc = incidentDateOf(r); if(!inc) return;
+    const k = monthKey(inc);
+    const bkt = (hearLagByMonth[k] = hearLagByMonth[k] || {lags:[], total:0});
+    bkt.total++;
+    const a = parseDate(r.dateSubmitted) || inc, b = parseDate(r.hearingDate);
+    if(b && b >= a) bkt.lags.push((b-a)/86400000);
+  });
+  // Months where fewer than half the filings are reviewed are excluded outright — the few
+  // early returns are survivor-biased and produce junk averages like "187d from 3/357".
+  const hlKeys = lastMonths(hearLagByMonth, 24).filter(k => {
+    const bkt = hearLagByMonth[k];
+    return bkt.lags.length > 0 && (bkt.lags.length / bkt.total) >= 0.5;
+  });
+  const hlAvgs = hlKeys.map(k => avgOf(hearLagByMonth[k].lags));
+  const hlMax = Math.max(0, ...hlAvgs);
+  document.getElementById('stats-hearlag').innerHTML =
+    hlKeys.map((k,i) => {
+      const bkt = hearLagByMonth[k];
+      return hbar(monthLabel(k), hlAvgs[i], hlMax, `${hlAvgs[i].toFixed(0)}d (${bkt.lags.length}/${bkt.total} reviewed)`, 'var(--blue)');
+    }).join('') ||
+    '<div class="empty">No months are majority-reviewed yet — averages would be survivor-biased junk.</div>';
+
+  /* --- Day-of-week and hour-of-day (incident time): volume + conversion --- */
+  const dow = Array.from({length:7}, ()=>({n:0, resolved:0, moneyed:0}));
+  const hod = Array.from({length:24}, ()=>({n:0, resolved:0, moneyed:0}));
+  all.forEach(r => {
+    const d = incidentDateOf(r); if(!d) return;
+    const buckets = [dow[d.getDay()], hod[d.getHours()]];
+    for(const b of buckets){
+      b.n++;
+      if(RESOLVED[r._rowType]){ b.resolved++; if(r._rowType==='paid'||r._rowType==='requested') b.moneyed++; }
+    }
+  });
+  const dowMax = Math.max(0, ...dow.map(b=>b.n));
+  document.getElementById('stats-dow').innerHTML =
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((name,i) =>
+      hbar(name, dow[i].n, dowMax, dow[i].n.toLocaleString(), 'var(--blue)')
+    ).join('');
+  // 6 AM – 5 PM individually; 6 PM – 5 AM lumped into one off-hours row
+  const dayHours = [];
+  for(let h=6; h<=17; h++) dayHours.push({ label: ((h%12)||12) + (h<12?' AM':' PM'), b: hod[h] });
+  const night = {n:0, resolved:0, moneyed:0};
+  for(let h=0; h<24; h++){ if(h < 6 || h >= 18){ night.n += hod[h].n; night.resolved += hod[h].resolved; night.moneyed += hod[h].moneyed; } }
+  dayHours.push({ label: '6 PM–5 AM', b: night });
+  const hodMax = Math.max(0, ...dayHours.map(x=>x.b.n));
+  document.getElementById('stats-hour').innerHTML =
+    dayHours.map(({label, b}) => hbar(label, b.n, hodMax, b.n.toLocaleString(), 'var(--orange2)')).join('') ||
+    '<div class="empty">No timestamps found.</div>';
+}
+
+/* ============================== RENDER: CHANGES TRACKER ============================== */
+function renderChanges(){
+  const log = appData.changeLog || [];
+  const typeFilter = document.getElementById('changes-filter-type').value;
+  const shown = typeFilter ? log.filter(c => c.type === typeFilter) : log;
+
+  const sinceLast = appData.lastDiffCount || 0;
+  const pip = document.getElementById('changes-pip');
+  pip.style.display = sinceLast ? '' : 'none';
+  pip.textContent = sinceLast;
+
+  const counts = { new:0, summons_assigned:0, hearing_status:0, hearing_result:0, payment_amount:0 };
+  log.forEach(c => { if(counts[c.type] !== undefined) counts[c.type]++; });
+
+  document.getElementById('changes-count').textContent = log.length + ' logged';
+  document.getElementById('changes-stats').innerHTML = `
+    <div class="stat-card"><div class="label">Since Last Refresh</div><div class="value orange">${sinceLast}</div><div class="sub">change${sinceLast===1?'':'s'} detected on the most recent refresh</div></div>
+    <div class="stat-card"><div class="label">New Complaints</div><div class="value success">${counts.new}</div></div>
+    <div class="stat-card"><div class="label">Summons Assigned</div><div class="value blue">${counts.summons_assigned}</div></div>
+    <div class="stat-card"><div class="label">Hearing Status</div><div class="value blue">${counts.hearing_status}</div></div>
+    <div class="stat-card"><div class="label">Hearing Result</div><div class="value blue">${counts.hearing_result}</div></div>
+    <div class="stat-card"><div class="label">Payment Amounts</div><div class="value orange">${counts.payment_amount}</div></div>
+  `;
+
+  const list = document.getElementById('changes-list');
+  list.innerHTML = shown.slice(0, 300).map(c => `
+    <div class="chg-item">
+      <div class="when">${new Date(c.ts).toLocaleString()}</div>
+      <div class="what">
+        <span class="badge chg-${c.type}">${CHANGE_LABELS[c.type]||c.type}</span>
+        <span class="badge dataset-${normalizeDS(c.dataset).toLowerCase()}">${esc(c.dataset)}</span>
+        <b>${esc(c.summons)}</b> · ${esc(c.company)}
+        ${c.type==='new'
+          ? `<div class="delta">Newly appeared in the sheet.</div>`
+          : `<div class="delta">${esc(c.before)} → <b>${esc(c.after)}</b></div>`}
+      </div>
+    </div>`
+  ).join('') || `<div class="empty">No changes logged yet — they'll appear here after the next refresh detects a difference.</div>`;
+}
+
+/* ============================== RENDER ALL / TABS ============================== */
+function renderAll(){ renderCacheNote(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderCalendar(); renderStats(); renderChanges(); }
+
+// calendar day drilldown (delegated — cells rebuild every render)
+document.getElementById('cal-grid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cal-cell[data-day]');
+  if(!cell) return;
+  calSelectedDay = (cell.dataset.day === calSelectedDay) ? null : cell.dataset.day;
+  renderCalendar();
+});
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('home-search').addEventListener('input', debounce(renderHome, 200));
+document.getElementById('home-filter-dataset').addEventListener('change', renderHome);
+document.getElementById('home-filter-status').addEventListener('change', renderHome);
+document.getElementById('home-expand').addEventListener('change', renderHome);
+document.getElementById('cal-filter-dataset').addEventListener('change', renderCalendar);
+document.getElementById('cal-prev').addEventListener('click', ()=>{ calUserNavigated = true; calCursor.setMonth(calCursor.getMonth()-1); renderCalendar(); });
+document.getElementById('cal-next').addEventListener('click', ()=>{ calUserNavigated = true; calCursor.setMonth(calCursor.getMonth()+1); renderCalendar(); });
+document.getElementById('cal-today').addEventListener('click', ()=>{ calUserNavigated = true; calCursor = new Date(); renderCalendar(); });
+document.getElementById('cal-month').addEventListener('change', (e)=>{ calUserNavigated = true; calCursor.setMonth(+e.target.value); renderCalendar(); });
+document.getElementById('cal-year').addEventListener('change', (e)=>{ calUserNavigated = true; calCursor.setFullYear(+e.target.value); renderCalendar(); });
+document.getElementById('changes-filter-type').addEventListener('change', renderChanges);
+document.getElementById('btn-clear-changes').addEventListener('click', ()=>{
+  appData.changeLog = []; appData.lastDiffCount = 0; persistCache(); renderChanges();
+});
+
+// sort headers are rebuilt on every renderHome (columns can change), so delegate on the thead
+document.querySelector('#home-table thead').addEventListener('click', (e) => {
+  const th = e.target.closest('th[data-k]');
+  if(!th) return;
+  const k = th.dataset.k;
+  homeSort = { key:k, dir: (homeSort.key===k ? -homeSort.dir : 1) };
+  renderHome();
+});
+
+/* ============================== MODALS ============================== */
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', ()=>closeModal(el.dataset.close)));
+document.getElementById('btn-rules').addEventListener('click', ()=>openModal('rules-overlay'));
+document.getElementById('btn-export-email').addEventListener('click', ()=>{ renderExportModal(); openModal('export-overlay'); });
+document.getElementById('btn-settings').addEventListener('click', ()=>{
+  document.getElementById('cfg-pubid').value = CFG.pubId;
+  document.getElementById('cfg-gid-atnyc').value = CFG.gids.atnyc;
+  document.getElementById('cfg-gid-at').value = CFG.gids.at;
+  document.getElementById('cfg-gid-mbt').value = CFG.gids.mbt;
+  document.getElementById('cfg-gid-requested').value = CFG.gids.requested;
+  document.getElementById('cfg-gid-paid').value = CFG.gids.paid;
+  document.getElementById('cfg-gid-disqreasons').value = CFG.gids.disqreasons;
+  for(const k of ['at','atnyc','mbt']){
+    document.getElementById(`cfg-${k}-code`).value = CFG.vendors[k].code;
+    document.getElementById(`cfg-${k}-name`).value = CFG.vendors[k].name;
+    document.getElementById(`cfg-${k}-address`).value = CFG.vendors[k].address;
+  }
+  document.getElementById('cfg-enrich').value = CFG.enrich;
+  openModal('settings-overlay');
+});
+document.getElementById('btn-save-settings').addEventListener('click', () => {
+  const vendors = {};
+  for(const k of ['at','atnyc','mbt']){
+    vendors[k] = {
+      code: document.getElementById(`cfg-${k}-code`).value.trim(),
+      name: document.getElementById(`cfg-${k}-name`).value.trim(),
+      address: document.getElementById(`cfg-${k}-address`).value.trim()
+    };
+  }
+  CFG = {
+    pubId: document.getElementById('cfg-pubid').value.trim(),
+    gids: {
+      atnyc: document.getElementById('cfg-gid-atnyc').value.trim(),
+      at: document.getElementById('cfg-gid-at').value.trim(),
+      mbt: document.getElementById('cfg-gid-mbt').value.trim(),
+      requested: document.getElementById('cfg-gid-requested').value.trim(),
+      paid: document.getElementById('cfg-gid-paid').value.trim(),
+      disqreasons: document.getElementById('cfg-gid-disqreasons').value.trim()
+    },
+    vendors,
+    enrich: document.getElementById('cfg-enrich').value
+  };
+  saveConfig(CFG);
+  closeModal('settings-overlay');
+  loadAllData(false);
+});
+document.getElementById('btn-refresh').addEventListener('click', () => { loadAllData(false); });
+document.getElementById('btn-clear-cache').addEventListener('click', () => {
+  localStorage.removeItem(LS_DATA);
+  appData = { merged: [], lastRefresh: null, changeLog: [], lastDiffCount: 0 };
+  renderAll();
+  setStatus('Cache cleared — refreshing…', true);
+  loadAllData(false);
+});
+
+/* ============================== BOOT: seamless load ============================== */
+if(isFileProtocol){
+  const warn = document.createElement('div');
+  warn.style.cssText = 'background:#fdf6e3; border:1px solid var(--warn); color:#7a5a12; border-radius:8px; padding:12px 16px; margin-bottom:14px; font-size:.82em; line-height:1.5;';
+  warn.innerHTML = "<b>Running as a local file (file://).</b> Some browsers block or throttle cross-origin requests from local files, which forces this app onto slower fallback proxies and can cause timeouts. Serve this folder locally instead: open Terminal, <code>cd</code> into this folder, run <code>python3 -m http.server 8765</code>, then open <code>http://localhost:8765</code> in your browser.";
+  document.getElementById('status-line').insertAdjacentElement('afterend', warn);
+}
+
+(async function boot(){
+  try{ localStorage.removeItem('truckNarcPriors'); }catch(e){} // leftover from the removed citywide-priors feature
+  await loadCache();
+  if(appData.merged.length){
+    setStatus('Showing cached data — refreshing in background…', true);
+    renderAll();
+  } else {
+    setStatus('Loading…', true);
+  }
+  loadAllData(!!appData.merged.length).catch(e => {
+    console.error(e);
+    setStatus('Refresh failed — showing last known data', false);
+  });
+})();
+</script>
+</body>
+</html>
