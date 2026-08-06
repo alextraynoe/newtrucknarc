@@ -64,6 +64,15 @@
   @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
 
   .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;}
+  /* Calendar's stat row has 7 cards — pin to exactly 7 columns so it never wraps to a second
+     line, instead of auto-fit dropping to fewer columns when the viewport is narrower. */
+  #cal-stats{grid-template-columns:repeat(7,1fr); gap:8px;}
+  #cal-stats .stat-card{padding:10px 10px;}
+  #cal-stats .stat-card .value{font-size:1.2em;}
+  #cal-stats .stat-card .label{font-size:.66em;}
+  #cal-stats .stat-card .sub{font-size:.66em;}
+  @media (max-width:1100px){ #cal-stats{grid-template-columns:repeat(4,1fr);} }
+  @media (max-width:640px){ #cal-stats{grid-template-columns:repeat(2,1fr);} }
   .stat-card{
     background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
     padding:14px 16px; box-shadow:var(--shadow);
@@ -190,8 +199,9 @@
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
   .cal-cell{
     background:var(--panel2); border:1px solid var(--border); border-radius:8px;
-    padding:8px; min-height:70px; font-size:.75em;
+    padding:8px; min-height:70px; font-size:.75em; position:relative;
   }
+  .wx-icon{position:absolute; top:6px; right:8px; font-size:1.15em; line-height:1;}
   .cal-cell .d{color:var(--dim); font-weight:700; margin-bottom:4px;}
   .cal-cell .hrs{color:var(--blue2); font-weight:700;}
   .cal-cell .rate{color:var(--orange2); font-weight:700;}
@@ -223,8 +233,25 @@
   .cal-cell .sub2{color:var(--dim); font-size:.92em; margin-top:2px;}
   .weekday-avg{display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-top:10px; font-size:.72em; color:var(--dim); text-align:center;}
   .weekday-avg b{color:var(--blue2); display:block; font-size:1.15em;}
+  .queue-item{display:flex; align-items:center; gap:14px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; margin-bottom:8px; cursor:pointer; transition:border-color .12s, transform .12s; background:#fbfcfe;}
+  .queue-item:hover{border-color:var(--blue); transform:translateX(2px);}
+  .queue-item .qn{font-size:1.45em; font-weight:800; min-width:64px; text-align:center;}
+  .queue-item .qt{flex:1;}
+  .queue-item .qt b{display:block; font-size:.92em;}
+  .queue-item .qt span{font-size:.78em; color:var(--dim);}
+  .queue-item .qv{font-weight:700; color:var(--success);}
+  .day-row{display:flex; gap:10px; align-items:center; padding:8px 6px; border-bottom:1px solid var(--border); font-size:.82em; cursor:pointer;}
+  .day-row:hover{background:var(--panel2);}
+  .day-row .dd{min-width:118px; font-weight:600;}
+  .day-row .dm{flex:1; color:var(--dim);}
+  .cal-week-total{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:7px; font-size:.68em; display:flex; flex-direction:column; justify-content:center; gap:2px;}
+  .cal-week-total b{font-size:1.3em; color:var(--blue2);}
+  .cal-week-total span{color:var(--dim);}
+  .cal-grid.with-totals{grid-template-columns:repeat(7,1fr) 92px;}
+  .cal-cell.spill{opacity:.32;}
   .wx{font-size:.8em; font-weight:400; color:var(--dim2); margin-left:3px;}
   #cal-map{height:340px; border-radius:10px; margin:10px 0 14px; border:1px solid var(--border); z-index:1;}
+  #stats-heatmap{aspect-ratio:1/1; max-width:640px; width:100%; height:auto; border-radius:10px; margin:0 auto; border:1px solid var(--border); z-index:1;}
   .map-pin{background:var(--blue); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35);}
   .cal-drill{margin-top:14px; border-top:1px solid var(--border); padding-top:10px;}
   .cal-drill h3{font-size:.9em; margin-bottom:8px;}
@@ -264,7 +291,7 @@
     <div class="title">
       <div>
         <h1>🚚 TRUCKNARC</h1>
-        <div class="sub">Citizen Air Complaint payout tracker — AT · AT NYC · MBT</div>
+        <div class="sub">They idle. You collect.</div>
       </div>
     </div>
     <div class="actions">
@@ -279,15 +306,44 @@
   </div>
 
   <div class="tabs">
-    <button class="tab-btn active" data-tab="home">Home</button>
+    <button class="tab-btn active" data-tab="dash">Home</button>
+    <button class="tab-btn" data-tab="home">Data</button>
     <button class="tab-btn" data-tab="newmoney">New Money</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
     <button class="tab-btn" data-tab="changes">Changes<span class="pip" id="changes-pip" style="display:none;">0</span></button>
   </div>
 
-  <!-- HOME -->
-  <section class="tab-content active" id="tab-home">
+  <!-- DASHBOARD (new home) -->
+  <section class="tab-content active" id="tab-dash">
+    <div class="grid" id="dash-money"></div>
+    <div class="panel">
+      <h2>Stuff <span class="tag" id="dash-queue-tag"></span></h2>
+      <div id="dash-queue"></div>
+      <div class="grid" id="dash-stuff-extra" style="margin-top:10px; margin-bottom:0;"></div>
+    </div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Since Last Refresh <span class="tag" id="dash-changes-tag">0</span></h2>
+        <div id="dash-changes"></div>
+      </div>
+      <div class="panel">
+        <h2>Last 10 Active Days <span class="tag">click to open in calendar</span></h2>
+        <div id="dash-days"></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Filing Pace <span class="tag">last 8 weeks</span></h2>
+      <div id="dash-spark"></div>
+    </div>
+    <div class="panel">
+      <h2>50 State Plates <span class="tag" id="plates-tag"></span></h2>
+      <div id="plates-widget"></div>
+    </div>
+  </section>
+
+  <!-- DATA -->
+  <section class="tab-content" id="tab-home">
     <div class="grid" id="home-stats"></div>
     <div class="panel">
       <h2>All Complaints <span class="tag" id="home-count">0 records</span></h2>
@@ -359,6 +415,14 @@
         <tbody></tbody>
       </table></div>
     </div>
+    <div class="panel">
+      <h2>Timestamp Anomalies <span class="tag" id="anomaly-count">0 flagged</span></h2>
+      <p class="desc">These rows have a clip From→To gap implying an impossible duration (a date typo or AM/PM flip in the source sheet, not a real long clip) — probably worth a correction email to DEP. Hours-worked math already treats these as unreliable rather than trusting the bad end time, so this list is just for your own sheet cleanup.</p>
+      <div class="table-wrap"><table id="anomaly-table">
+        <thead><tr><th>Dataset</th><th>Summons #</th><th>Complaint #</th><th>From</th><th>To (as filed)</th><th>Implied Duration</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
   </section>
 
   <!-- CALENDAR -->
@@ -366,7 +430,7 @@
     <div class="grid" id="cal-stats"></div>
     <div class="panel">
       <h2>Hours Worked &amp; Hourly Rate <span class="tag" id="cal-label">This month</span></h2>
-      <p class="desc">Days are bucketed by when incidents actually <b>occurred</b> (the video clip's From timestamp). Hours come from clustering the real From/To spans (a 2.5hr+ gap starts a new shift, padded 30min each side). Cell color runs red → green as the day's received money approaches its estimate. Click a day for totals and details.</p>
+      <p class="desc">Days are bucketed by when incidents actually <b>occurred</b> (the video clip's From timestamp). Hours come from clustering the real From/To spans of <b>main-shift (weekday, 5am-6pm)</b> sightings only — a 1.5hr+ gap starts a new shift, padded 30min each side. Weekend or before-5am/after-6pm sightings don't cluster into hours at all; they're counted separately as "overtime trucks". Cell color runs red → green as the day's estimated value approaches the month's max; the weekly total column uses its own red → green scale across weeks. Click a day for totals and details.</p>
       <div class="search-row">
         <button class="btn ghost" id="cal-prev">←</button>
         <select id="cal-month"></select>
@@ -380,8 +444,8 @@
           <option value="MBT">MBT</option>
         </select>
       </div>
-      <div class="cal-grid" id="cal-heads"></div>
-      <div class="cal-grid" id="cal-grid" style="margin-top:6px;"></div>
+      <div class="cal-grid with-totals" id="cal-heads"></div>
+      <div class="cal-grid with-totals" id="cal-grid" style="margin-top:6px;"></div>
       <div class="weekday-avg" id="cal-weekday-avg"></div>
       <div class="cal-drill" id="cal-drill" style="display:none;"></div>
     </div>
@@ -392,6 +456,10 @@
     <div class="panel">
       <h2>Success Funnel <span class="tag">Where every filing ends up</span></h2>
       <div id="stats-funnel"></div>
+    </div>
+    <div class="panel">
+      <h2>Hearings Scoreboard <span class="tag">lifetime, in violation vs dismissed</span></h2>
+      <div id="stats-hearings-scoreboard"></div>
     </div>
     <div class="panel">
       <h2>Cohort Funnel by Incident Month <span class="tag">is quality improving?</span></h2>
@@ -428,6 +496,9 @@
       <div class="panel">
         <h2>Boroughs <span class="tag">from master data</span></h2>
         <div id="stats-boroughs"></div>
+        <div class="note" style="margin:14px 0 4px; font-weight:700; color:var(--text);">Top 5 Neighborhoods</div>
+        <p class="desc" style="margin:0 0 8px;">Nearest-match against NYC neighborhood centroids, using each filing's coordinates.</p>
+        <div id="stats-neighborhoods"></div>
       </div>
     </div>
     <div class="two-col">
@@ -455,7 +526,8 @@
         <div id="stats-top-payout"></div>
       </div>
       <div class="panel">
-        <h2>Top Companies by Volume <span class="tag">canonical names</span></h2>
+        <h2>Worst Companies <span class="tag">probably won't pay</span></h2>
+        <p class="desc">Ranked by disqualification/dismissal rate among each company's resolved filings (5+ resolved required, so a single bad case doesn't look like 100%).</p>
         <div id="stats-top-volume"></div>
       </div>
     </div>
@@ -483,14 +555,25 @@
         <div id="stats-hour"></div>
       </div>
     </div>
-    <div class="panel">
-      <h2>Summons Volume Over Time <span class="tag">summonsed complaints per incident month</span></h2>
-      <div id="stats-summonsline"></div>
+    <div class="two-col">
+      <div class="panel">
+        <h2>Your Hot Spots <span class="tag" id="stats-hotblocks-tag"></span></h2>
+        <p class="desc">Your known productive spots, ranked by yield — some are a single block, some span a few adjacent blocks, and two are named-street groupings in Bushwick. "Days" = days you filed at least one there.</p>
+        <div id="stats-hotblocks"></div>
+      </div>
+      <div class="panel">
+        <h2>Best Single Blocks <span class="tag">discovery — everywhere else</span></h2>
+        <p class="desc">Your most productive single blocks that <b>aren't</b> on the hot spot list — candidates to add to the route. Hover a row for its hearing-outcome breakdown.</p>
+        <div id="stats-otherblocks"></div>
+      </div>
     </div>
     <div class="panel">
-      <h2>Revenue Over Time <span class="tag">green = your 25% received · yellow = potential from balance due</span></h2>
-      <p class="desc">Yellow is the ceiling: your 25% share (capped at $250) if every currently-outstanding summons paid in full. Hover a month for exact figures.</p>
-      <div class="chart-scroll" id="stats-revovertime"></div>
+      <h2>Time to Payment <span class="tag">incident → payment received</span></h2>
+      <div id="stats-timetopay"></div>
+    </div>
+    <div class="panel">
+      <h2>Heat Map <span class="tag">every located filing</span></h2>
+      <div id="stats-heatmap"></div>
     </div>
   </section>
 
@@ -618,7 +701,7 @@
     <p>Both lags — request→paid and submission→hearing — have gotten dramatically worse over time, so lifetime averages would lowball reality. Forecasted payment dates use the average of your <b>last 20</b> paid requests; estimated hearing dates (shown in italics for rows with no hearing yet, or as "overdue ~Xd" once the estimate has passed) use your last 50 submission→hearing gaps. Estimates are display-only and never feed the revenue math.</p>
 
     <h4>How Hours Worked / Hourly Rate is calculated</h4>
-    <p>There's no real clock-in data, so hours are inferred from the times you submitted complaints: a gap of 2.5 hours or more between two submissions starts a new "shift." Each shift is padded 30 minutes on either end. Hourly rate = that day's payout earned ÷ that day's inferred hours.</p>
+    <p>There's no real clock-in data, so hours are inferred from clip timestamps: a gap of 1.5 hours or more between two clips starts a new "shift." Each shift is padded 30 minutes on either end. Only <b>main-shift</b> sightings (weekdays, 5am-6pm) count toward hours — anything on a weekend or before 5am/after 6pm is pulled out and counted separately as an "overtime truck" instead of being time-clustered. Hourly rate = that day's <b>estimated</b> payout ÷ that day's main-shift hours. A handful of source rows have a corrupted clip end-time (a date typo, an AM/PM flip); anything implying more than an hour for a single clip is treated as unreliable for hours math and surfaced in New Money as worth double-checking with DEP, rather than allowed to silently inflate a day's hours.</p>
 
     <h4>Offense tiers</h4>
     <p>The Description column is scanned for "2nd offense" / "second offense" / "3rd offense" etc. Repeat offenses raise the fine ($350 / $450 / $600), and all expected-payout estimates use the right tier. First offense is assumed when nothing is mentioned.</p>
@@ -898,11 +981,26 @@ const companyNameMapping = {
     'VERIZON BUSINESS NETWORK SERVICES LLC': 'VERIZON BUSINESS NETWORK SERVICES',
     'VIXXO': 'VIXXO'
 };
+/* Parent-company rollup: any canonical name starting with one of these collapses into it,
+   so "VERIZON BUSINESS NETWORK SERVICES" and "VERIZON" are one company (same for FedEx's
+   three spellings, U-Haul, Penske, Ryder, etc.). Longest match wins. */
+const PARENT_COMPANIES = ['CON EDISON','FEDERAL EXPRESS','FEDEX','VERIZON','U-HAUL','UHAUL','PENSKE','RYDER',
+  'AMAZON','UPS','UNITED PARCEL','SUNBELT','IRON MOUNTAIN','KONE','SCHINDLER','CHARTER COMMUNICATIONS',
+  'SAFWAY','HERTZ','ENTERPRISE','BUDGET','AVIS','SYSCO','BALDOR','US FOODS','PEPSI','COCA-COLA'];
+const PARENT_ALIASES = { 'FEDERAL EXPRESS':'FEDEX', 'UHAUL':'U-HAUL', 'UNITED PARCEL':'UPS' };
+function rollUpParent(norm){
+  let best = null;
+  for(const p of PARENT_COMPANIES){
+    if((norm === p || norm.startsWith(p + ' ')) && (!best || p.length > best.length)) best = p;
+  }
+  if(!best) return norm;
+  return PARENT_ALIASES[best] || best;
+}
 function normalizeCompanyName(companyName){
     if(!companyName) return 'Unknown';
     const normalized = companyName.toUpperCase().trim();
-    if(companyNameMapping[normalized]) return companyNameMapping[normalized];
-    return normalized;
+    const mapped = companyNameMapping[normalized] || normalized;
+    return rollUpParent(mapped);
 }
 
 /* ============================== CSV PARSER ============================== */
@@ -1088,6 +1186,185 @@ function receivedFor(rec){ return rec._rowType === 'paid' ? (rec.paidToMe || rec
 
 /* "Unknown" means we don't know the company YET — it is not a company and never groups as one. */
 function isUnknownCo(norm){ return /^UNKNOWN$/i.test(String(norm||'').trim()); }
+/* ---- Block identity from an address (Manhattan-first) ----
+   Two forms are handled:
+   • Numbered cross-street: "12 W 45th St" → the block of W 45th between the avenues implied
+     by the house number (Manhattan's numbered streets run 1–99 between 5th and Madison-ish,
+     100s between 5th and 6th, and so on — encoded in AVE_BY_HUNDREDS below).
+   • Avenue address: "555 5th Ave" → 5th Ave between the cross-streets implied by the number
+     (roughly houseNo/20 + a per-avenue offset; the classic NYC address algorithm).
+   Anything that doesn't parse is counted as "unparsed" and reported, never silently dropped. */
+// FIXED (was off-by-one): house numbers 0-99 west of 5th are the 5th/6th block, not 5th/Madison —
+// Madison is east of 5th and can never bound a WEST-side block. Every entry below was previously
+// shifted one avenue too far east; the erroneous 0:['5th','Madison'] row (that's the EAST table's
+// row) has been dropped and the rest renumbered to start at 5th/6th. See tests/blocktest.js.
+const AVE_BY_HUNDREDS = { 0:['5th','6th'], 1:['6th','7th'], 2:['7th','8th'], 3:['8th','9th'],
+  4:['9th','10th'], 5:['10th','11th'], 6:['11th','12th'] };
+const AVE_EAST_BY_HUNDREDS = { 0:['5th','Madison'], 1:['Madison','Park'], 2:['Park','Lexington'],
+  3:['Lexington','3rd'], 4:['3rd','2nd'], 5:['2nd','1st'], 6:['1st','York'] };
+// Full east-to-west avenue order (both tables combined), used for accurate multi-block RANGE
+// matching in hotBlockOf below — a hot spot spanning several 100-block segments (e.g. "24th
+// between 5th & 7th") needs to match every segment whose two avenues fall inside that range,
+// not just segments that happen to touch one of the two named endpoints.
+const AVENUE_ORDER = ['12th','11th','10th','9th','8th','7th','6th','5th','madison','park','lexington','3rd','2nd','1st','york'];
+function aveIdx(name){ return AVENUE_ORDER.indexOf(String(name||'').toLowerCase()); }
+function inAveRange(segFrom, segTo, boundA, boundB){
+  const iA = aveIdx(boundA), iB = aveIdx(boundB);
+  if(iA < 0 || iB < 0) return false; // bound isn't a grid avenue (e.g. "Vanderbilt") — caller falls back
+  const iFrom = aveIdx(segFrom), iTo = aveIdx(segTo);
+  if(iFrom < 0 || iTo < 0) return false;
+  const lo = Math.min(iA, iB), hi = Math.max(iA, iB);
+  return Math.min(iFrom, iTo) >= lo && Math.max(iFrom, iTo) <= hi;
+}
+/* Real NYC avenue algorithm: drop the last digit of the house number, halve it, then add the
+   avenue's offset. 5th Ave and Broadway use range-dependent offsets, so they're functions. */
+const AVE_OFFSETS = { '1st':3, '2nd':3, '3rd':10, '6th':-12, '7th':12, '8th':10,
+  '9th':13, '10th':14, '11th':15, 'lexington':22, 'madison':26, 'park':35, 'amsterdam':60, 'columbus':60, 'york':4 };
+function aveOffset(ave, num){
+  if(ave === '5th'){
+    if(num <= 200) return 13;
+    if(num <= 400) return 16;
+    if(num <= 600) return 18;
+    if(num <= 775) return 20;
+    if(num >= 776 && num <= 1286) return null; // this range uses a different rule; skip rather than guess
+    return 20;
+  }
+  if(ave === 'broadway'){
+    if(num <= 754) return null;
+    if(num <= 846) return -29;
+    if(num <= 953) return -25;
+    return -31;
+  }
+  const v = AVE_OFFSETS[ave];
+  return v === undefined ? null : v;
+}
+function ordinalize(n){
+  const v = n % 100;
+  if(v >= 11 && v <= 13) return n + 'th';
+  return n + ({1:'st',2:'nd',3:'rd'}[n % 10] || 'th');
+}
+function parseBlock(addr){
+  if(!addr) return null;
+  const a = String(addr).replace(/\s+/g,' ').trim();
+  // avenue form: "555 5TH AVE" / "800 LEXINGTON AVENUE" / "1500 BROADWAY"
+  let m = a.match(/^(\d+)\s+(?:E(?:AST)?\.?\s+|W(?:EST)?\.?\s+)?(\d{1,2}(?:ST|ND|RD|TH)|LEXINGTON|MADISON|PARK|BROADWAY|AMSTERDAM|COLUMBUS|YORK|VANDERBILT)(?:\s+(AVE|AVENUE))?\b/i);
+  if(m && (m[3] || /^broadway$/i.test(m[2]))){
+    const num = +m[1];
+    const aveRaw = m[2].toLowerCase();
+    const off = aveOffset(aveRaw, num);
+    if(off !== null){
+      const cross = Math.floor(Math.floor(num/10) / 2) + off; // truncate, per the standard algorithm
+      if(cross > 0 && cross < 220){
+        const aveName = /broadway/i.test(aveRaw) ? 'Broadway' : aveRaw.replace(/^(\w+?)(st|nd|rd|th)$/i, (x,d,sfx)=>d+sfx);
+        const disp = /broadway/i.test(aveRaw) ? 'Broadway' : (aveName.charAt(0).toUpperCase()+aveName.slice(1) + ' Ave');
+        return { street: disp, from: ordinalize(cross), to: ordinalize(cross+1), kind:'avenue' };
+      }
+    }
+  }
+  // numbered-street form: "12 W 45TH ST" / "230 EAST 22 STREET"
+  m = a.match(/^(\d+)\s+(E(?:AST)?|W(?:EST)?)?\.?\s*(\d{1,3})(?:ST|ND|RD|TH)?\s+(ST|STREET)\b/i);
+  if(m){
+    const num = +m[1], side = (m[2]||'W')[0].toUpperCase(), st = +m[3];
+    const table = side === 'E' ? AVE_EAST_BY_HUNDREDS : AVE_BY_HUNDREDS;
+    const bounds = table[Math.floor(num/100)];
+    if(bounds) return { street: side + ' ' + ordinalize(st) + ' St', from: bounds[0], to: bounds[1], kind:'street' };
+  }
+  return null;
+}
+function blockLabel(b){ return b ? `${b.street} between ${b.from} & ${b.to}` : null; }
+/* The user's known "Hot Spots" — some are a single numbered-street block, some now span several
+   adjacent 100-block segments (matched via inAveRange), and two are named-street groupings in
+   Bushwick that parseBlock can't resolve to an avenue pair at all (rawMatch tests the raw
+   location string directly, bypassing block-parsing entirely). */
+const HOT_BLOCKS = [
+  { street:/\b22(ND)? ST\b/i, bounds:['5th','6th'], label:'22nd between 5th & 6th' },
+  { street:/\b23(RD)? ST\b/i, bounds:['7th','madison'], label:'23rd between 7th & Madison' },
+  { street:/\b24(TH)? ST\b/i, bounds:['5th','7th'], label:'24th between 5th & 7th' },
+  { street:/\b33(RD)? ST\b/i, bounds:['5th','6th'], label:'33rd between 5th & 6th' },
+  { street:/\b3[5-9](TH)? ST\b/i, bounds:['5th','6th'], label:'35th-39th between 5th & 6th' },
+  { street:/\b40(TH)? ST\b/i, bounds:['5th','6th'], label:'40th between 5th & 6th' },
+  { street:/\b45(TH)? ST\b/i, bounds:['5th','3rd'], label:'45th between 5th & 3rd' },
+  { street:/\b58(TH)? ST\b/i, bounds:['5th','7th'], label:'58th between 5th & 7th' },
+  { rawMatch:/\b(?:GARDNER|SCOTT)\s+AVE\b|\b(?:SCHOLES|MESEROLE)\s+ST\b/i, label:'Gardner/Scott/Scholes/Meserole' }
+];
+function hotBlockOf(b){
+  if(!b) return null;
+  for(const hb of HOT_BLOCKS){
+    if(!hb.street || !hb.street.test(b.street)) continue;
+    if(inAveRange(b.from, b.to, hb.bounds[0], hb.bounds[1])) return hb.label;
+    // Range match only works when both bounds are real grid avenues. Named cross-streets like
+    // "Vanderbilt" aren't in AVENUE_ORDER, so fall back to the old loose substring match for them.
+    if(aveIdx(hb.bounds[0]) < 0 || aveIdx(hb.bounds[1]) < 0){
+      const lo = String(b.from).toLowerCase(), hi = String(b.to).toLowerCase();
+      const want = hb.bounds.map(x=>x.toLowerCase());
+      if(want.some(w => lo.includes(w) || hi.includes(w))) return hb.label;
+    }
+  }
+  return null;
+}
+/* Named-street hot spots that parseBlock can never produce a block for (no avenue-boundary
+   concept) — matched directly against the raw location text at merge time. */
+function hotBlockRawOf(loc){
+  if(!loc) return null;
+  for(const hb of HOT_BLOCKS){
+    if(hb.rawMatch && hb.rawMatch.test(loc)) return hb.label;
+  }
+  return null;
+}
+
+/* ---- Neighborhood lookup: nearest-centroid match against real NYC neighborhoods ----
+   No network call (loadAllData must stay fast and offline-safe — see the removed citywide
+   priors lookup in project history), so this is a static table of approximate neighborhood
+   centroids rather than a live boundary/geocode service. Good enough to rank "which
+   neighborhoods am I filing in most" — not survey-grade, but real geography, not a
+   borough/block guess. */
+const NYC_NEIGHBORHOODS = [
+  ['Battery Park City',40.7115,-74.0161],['Financial District',40.7075,-74.0113],['Tribeca',40.7163,-74.0086],
+  ['Chinatown',40.7158,-73.9970],['Two Bridges',40.7115,-73.9950],['Lower East Side',40.7168,-73.9861],
+  ['SoHo',40.7233,-74.0030],['Little Italy',40.7191,-73.9973],['Nolita',40.7223,-73.9957],
+  ['Greenwich Village',40.7336,-74.0027],['West Village',40.7358,-74.0036],['East Village',40.7265,-73.9815],
+  ['Gramercy Park',40.7375,-73.9840],['Kips Bay',40.7420,-73.9790],['Murray Hill',40.7479,-73.9787],
+  ['Chelsea',40.7465,-74.0014],['Flatiron District',40.7401,-73.9903],['Union Square',40.7359,-73.9911],
+  ['Hell\'s Kitchen',40.7638,-73.9918],['Midtown',40.7549,-73.9840],['Midtown East',40.7550,-73.9707],
+  ['Midtown West',40.7614,-73.9885],['Garment District',40.7539,-73.9903],['Theater District',40.7590,-73.9845],
+  ['Turtle Bay',40.7527,-73.9679],['Sutton Place',40.7574,-73.9629],['Upper East Side',40.7736,-73.9566],
+  ['Upper West Side',40.7870,-73.9754],['Lincoln Square',40.7738,-73.9840],['Yorkville',40.7757,-73.9494],
+  ['East Harlem',40.7957,-73.9389],['Harlem',40.8116,-73.9465],['Morningside Heights',40.8081,-73.9619],
+  ['Washington Heights',40.8417,-73.9393],['Inwood',40.8677,-73.9212],['Roosevelt Island',40.7614,-73.9497],
+  ['Long Island City',40.7447,-73.9485],['Astoria',40.7644,-73.9235],['Sunnyside',40.7433,-73.9196],
+  ['Woodside',40.7457,-73.9061],['Jackson Heights',40.7556,-73.8830],['Elmhurst',40.7362,-73.8801],
+  ['Corona',40.7449,-73.8648],['Flushing',40.7654,-73.8318],['College Point',40.7893,-73.8407],
+  ['Whitestone',40.7965,-73.8154],['Bayside',40.7622,-73.7724],['Forest Hills',40.7196,-73.8448],
+  ['Rego Park',40.7258,-73.8613],['Ridgewood',40.7010,-73.9066],['Maspeth',40.7233,-73.9088],
+  ['Middle Village',40.7166,-73.8815],['Glendale',40.7013,-73.8790],['Woodhaven',40.6899,-73.8578],
+  ['Ozone Park',40.6796,-73.8437],['Jamaica',40.7027,-73.7889],['St. Albans',40.6939,-73.7615],
+  ['Bushwick',40.6958,-73.9171],['Williamsburg',40.7081,-73.9571],
+  ['Greenpoint',40.7304,-73.9530],['Bedford-Stuyvesant',40.6872,-73.9418],['Bushterminal',40.6519,-74.0134],
+  ['Downtown Brooklyn',40.6913,-73.9856],['Brooklyn Heights',40.6960,-73.9936],['DUMBO',40.7033,-73.9887],
+  ['Fort Greene',40.6896,-73.9736],['Clinton Hill',40.6889,-73.9639],['Park Slope',40.6710,-73.9814],
+  ['Prospect Heights',40.6782,-73.9675],['Crown Heights',40.6694,-73.9422],['Sunset Park',40.6459,-74.0107],
+  ['Red Hook',40.6742,-74.0110],['Carroll Gardens',40.6799,-73.9995],['Cobble Hill',40.6875,-73.9968],
+  ['Gowanus',40.6738,-73.9930],['Bay Ridge',40.6263,-74.0299],['Bensonhurst',40.6026,-73.9948],
+  ['Sheepshead Bay',40.5860,-73.9440],['Coney Island',40.5755,-73.9707],['Flatbush',40.6404,-73.9598],
+  ['East New York',40.6660,-73.8827],['Canarsie',40.6394,-73.9020],['Brownsville',40.6634,-73.9096],
+  ['Mott Haven',40.8093,-73.9226],['Melrose',40.8256,-73.9106],['Hunts Point',40.8129,-73.8834],
+  ['Port Morris',40.8018,-73.9139],['South Bronx',40.8110,-73.9210],['Highbridge',40.8375,-73.9257],
+  ['Concourse',40.8290,-73.9218],['Fordham',40.8610,-73.8958],['Riverdale',40.8917,-73.9051],
+  ['Throgs Neck',40.8156,-73.8154],['Pelham Bay',40.8508,-73.8262],['St. George',40.6437,-74.0787],
+  ['Stapleton',40.6273,-74.0776],['Tottenville',40.5054,-74.2454],['Port Richmond',40.6345,-74.1296]
+];
+function nearestNeighborhood(lat, lng){
+  if(!isFinite(lat) || !isFinite(lng) || (lat===0 && lng===0)) return null;
+  // rough NYC-latitude flattening so degrees-of-lng aren't over-weighted vs degrees-of-lat
+  let best = null, bestD = Infinity;
+  for(const [name, nlat, nlng] of NYC_NEIGHBORHOODS){
+    const dy = lat - nlat, dx = (lng - nlng) * 0.76;
+    const d = dy*dy + dx*dx;
+    if(d < bestD){ bestD = d; best = name; }
+  }
+  return best;
+}
+
 /* The Direct Link column from the master sheet, wherever it lives in the extras. */
 function directLinkOf(rec){
   if(!rec._extra) return null;
@@ -1177,6 +1454,24 @@ function survivalP(ageDays){
   while(lo < hi){ const mid = (lo+hi)>>1; if(SURV.allAges[mid] <= eq) lo = mid+1; else hi = mid; }
   const T = 1 - lo / SURV.allAges.length; // share of conversions that historically happened AFTER this point
   return SURV.W * T;
+}
+
+/* ---- Hearing-outcome classification (Best Single Blocks stats) ---- */
+function hearingOutcome(rec){
+  const hr = String(rec.hearingResult||'').toUpperCase();
+  if(hr.includes('DISMISSED')) return 'dismissed';
+  if(hr.includes('NO VIOLATION')) return 'noviolation';
+  if(hr.includes('VIOLATION')) return 'violation';
+  return null;
+}
+// User's own read of NYC's status vocabulary: paying the ticket outright (no hearing fought)
+// shows up as a hearingStatus containing "ADMIT" (e.g. "ADMIT IN-VIO").
+function paidTicketOutright(rec){ return String(rec.hearingStatus||'').toUpperCase().includes('ADMIT'); }
+// A paid/requested row whose status or result still shows DEFAULT was collected off a default
+// judgment (extra above the base conversion rate), as opposed to a regular hearing resolution.
+function wasDefaultJudgment(rec){
+  const s = String(rec.hearingStatus||'').toUpperCase(), h = String(rec.hearingResult||'').toUpperCase();
+  return s.includes('DEFAULT') || h.includes('DEFAULT');
 }
 
 /* Which valuation branch a row falls into — shared by the formula and the breakdown. */
@@ -1375,6 +1670,8 @@ async function loadAllData(silent){
       if(paidMatch){ rec.paidToMe = paidMatch.paidToMe; rec.paidDate = paidMatch.paidDate; }
       if(reqMatch){ rec.requestedDate = reqMatch.requestedDate; }
       classifyRow(rec);
+      rec._block = parseBlock(rec.location);
+      rec._hotBlock = hotBlockOf(rec._block) || hotBlockRawOf(rec.location);
       rec.offense = offenseFor(rec);
       rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
       merged.push(rec);
@@ -1671,9 +1968,29 @@ function getLagModels(){
     if(hear.length){ hearAvg = avgOf(hear.map(x=>x.lag)); hearN = hear.length; hearNote = 'recent pairs (no consistent month yet)'; }
   }
   return {
-    payment: { avg: payAvg, n: payRecent.length || pay.length },
+    payment: { avg: payAvg, n: payRecent.length || pay.length, lagsAll: pay.map(x=>x.lag) },
     hearing: { avg: hearAvg, n: hearN, note: hearNote }
   };
+}
+
+// A flat median forecast (reqDate + avg lag) lands in the PAST for any row that's already
+// waited longer than average — that's not a forecast, it's a stale number. Once a row has
+// outlasted the median, condition on that survival: look at your own historical requests that
+// ALSO took at least this long, and use what THEY averaged instead. Needs a handful of such
+// precedents to trust; with none, this is flagged as a rough, non-data-backed extrapolation.
+const MIN_SURVIVORS_FOR_ESTIMATE = 3;
+function estimatePaymentDate(reqDate, daysWaiting, payModel){
+  if(!reqDate) return { date: null, conditional: false };
+  if(daysWaiting < payModel.avg){
+    return { date: new Date(reqDate.getTime() + payModel.avg*86400000), conditional: false };
+  }
+  const survivors = (payModel.lagsAll || []).filter(l => l > daysWaiting);
+  if(survivors.length >= MIN_SURVIVORS_FOR_ESTIMATE){
+    const revisedLag = survivors.reduce((a,b)=>a+b,0) / survivors.length;
+    return { date: new Date(reqDate.getTime() + revisedLag*86400000), conditional: true, n: survivors.length };
+  }
+  const revisedLag = daysWaiting * 1.15; // no precedent this old — conservative pad, not data-backed
+  return { date: new Date(reqDate.getTime() + revisedLag*86400000), conditional: true, n: survivors.length, rough: true };
 }
 
 /* ============================== RENDER: HOME ============================== */
@@ -1750,6 +2067,11 @@ const HOME_COLUMNS = [
   { k:'complianceStatus',label:'Compliance',       extra:true,  render:r => esc(r.complianceStatus)||'—' },
   { k:'_daysToHearing',  label:'Days to Hearing',  extra:true,  render:r => {
       const a = parseDate(r.dateSubmitted), b = parseDate(r.hearingDate);
+      return (a && b && b >= a) ? Math.round((b-a)/86400000) : '—';
+    } },
+  { k:'_daysToPayment',  label:'Days to Payment',  extra:true,  render:r => {
+      if(r._rowType !== 'paid') return '—';
+      const a = incidentDateOf(r), b = parseDate(r.paidDate);
       return (a && b && b >= a) ? Math.round((b-a)/86400000) : '—';
     } },
   { k:'disqualReason',   label:'Disqual. Reason',  extra:true,  render:r => esc(r.disqualReason)||'—' },
@@ -1911,22 +2233,33 @@ function renderNewMoney(){
   const pendingReq = appData.merged.filter(r => r._rowType === 'requested').map(r => {
     const reqDate = parseDate(r.requestedDate);
     const daysWaiting = reqDate ? Math.floor((now - reqDate)/86400000) : -1;
-    const forecast = reqDate ? new Date(reqDate.getTime() + avgLag*86400000) : null;
+    const est = estimatePaymentDate(reqDate, daysWaiting, payLag);
     const expected = expectedPayoutFor(r);
-    return Object.assign({}, r, { _daysWaiting: daysWaiting, _forecast: forecast, _expected: expected });
+    return Object.assign({}, r, { _daysWaiting: daysWaiting, _forecast: est.date, _forecastConditional: est.conditional, _forecastRough: est.rough, _forecastN: est.n, _expected: expected });
   }).sort((a,b) => b._daysWaiting - a._daysWaiting);
 
   const totalExpected = pendingReq.reduce((s,r) => s + r._expected, 0);
   document.getElementById('pendreq-tag').textContent = `${money(totalExpected)} expected · sorted by longest wait first`;
 
   const tbody2 = document.querySelector('#pending-req-table tbody');
-  tbody2.innerHTML = pendingReq.map(r => `
-    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+  tbody2.innerHTML = pendingReq.map(r => {
+    let forecastCell = '—';
+    if(r._forecast){
+      if(!r._forecastConditional){
+        forecastCell = r._forecast.toLocaleDateString();
+      } else if(r._forecastRough){
+        forecastCell = `<span class="est overdue" title="Already waited ${r._daysWaiting}d — longer than every one of your last 24 months' paid requests, so there's no historical precedent to base this on. Rough extrapolation only.">~${r._forecast.toLocaleDateString()} (rough)</span>`;
+      } else {
+        const revisedTotalLag = Math.round((r._forecast - parseDate(r.requestedDate)) / 86400000);
+        forecastCell = `<span class="est" title="Already past the ${Math.round(avgLag)}d typical lag. Revised using the ${r._forecastN} of your last 24 months' requests that also took at least ${r._daysWaiting}d — they averaged ${revisedTotalLag}d total.">~${r._forecast.toLocaleDateString()}</span>`;
+      }
+    }
+    return `<tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
       <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${esc(r.requestedDate)||'—'}</td>
       <td>${money(r._expected)}</td>
       <td>${r._daysWaiting>=0 ? r._daysWaiting : '—'}</td>
-      <td>${r._forecast ? r._forecast.toLocaleDateString() : '—'}</td></tr>`
-  ).join('') || `<tr><td colspan="7" class="empty">No pending requests.</td></tr>`;
+      <td>${forecastCell}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty">No pending requests.</td></tr>`;
 
   document.getElementById('newmoney-stats').innerHTML = `
     <div class="stat-card"><div class="label">New Money Available</div><div class="value success">${newMoney.length}</div></div>
@@ -1943,7 +2276,7 @@ function renderNewMoney(){
 function buildExportGroups(){
   const eligible = appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFullExact(r));
   const groups = [];
-  for(const dsKey of ['at','atnyc','mbt']){
+  for(const dsKey of ['atnyc','at','mbt']){
     const label = DATASET_LABELS[dsKey];
     const list = eligible.filter(r => normalizeDS(r.dataset) === normalizeDS(label));
     for(let i=0; i<list.length; i+=8){
@@ -2014,6 +2347,19 @@ function renderDiscrepancies(){
 
 }
 
+function renderTimestampAnomalies(){
+  const rows = findSuspectClips();
+  document.getElementById('anomaly-count').textContent = rows.length + ' flagged';
+  document.querySelector('#anomaly-table tbody').innerHTML = rows.map(x => {
+    const r = x.rec;
+    const days = Math.floor(x.impliedMin/1440), hrs = Math.floor((x.impliedMin%1440)/60), mins = Math.round(x.impliedMin%60);
+    const durStr = (days?days+'d ':'') + (hrs?hrs+'h ':'') + mins+'m';
+    return `<tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+      <td>${esc(r.summons)||'—'}</td><td>${complaintCell(r)}</td>
+      <td>${x.from.toLocaleString()}</td><td>${esc(r.clipTo)}</td><td>${durStr}</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">No timestamp anomalies found — clean.</td></tr>`;
+}
+
 /* ============================== RENDER: CALENDAR ============================== */
 let calCursor = new Date();
 let calSelectedDay = null;
@@ -2021,32 +2367,43 @@ let calUserNavigated = false;
 let weatherToken = 0;
 const LS_WEATHER = 'truckNarcWeather';
 
-/* Daily NYC hi/lo temps from Open-Meteo's free archive (no key needed). Past months are
-   immutable so they cache forever; the current month refreshes every 6 hours. */
+/* Daily NYC hi/lo temps + precipitation/snowfall from Open-Meteo's free archive (no key
+   needed). Past months are immutable so they cache forever; the current month refreshes
+   every 6 hours. WEATHER_SCHEMA_V bump invalidates old cached entries that predate
+   precip/snow fields, so they refetch instead of silently missing the new icons. */
+const WEATHER_SCHEMA_V = 2;
 async function fetchMonthTemps(y, m){
   const key = y + '-' + String(m+1).padStart(2,'0');
   let cache = {};
   try{ cache = JSON.parse(localStorage.getItem(LS_WEATHER) || '{}'); }catch(e){}
   const now = new Date();
   const isCurrent = now.getFullYear() === y && now.getMonth() === m;
-  if(cache[key] && (!isCurrent || Date.now() - cache[key].ts < 6*3600000)) return cache[key].days;
+  if(cache[key] && cache[key].v === WEATHER_SCHEMA_V && (!isCurrent || Date.now() - cache[key].ts < 6*3600000)) return cache[key].days;
   const start = key + '-01';
   const endTs = Math.min(new Date(y, m+1, 0).getTime(), now.getTime() - 86400000);
   if(new Date(start).getTime() > endTs) return {};
   const end = localDayKey(new Date(endTs));
   try{
-    const res = await fetch('https://archive-api.open-meteo.com/v1/archive?latitude=40.7128&longitude=-74.006&start_date=' + start + '&end_date=' + end + '&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=America%2FNew_York');
+    const res = await fetch('https://archive-api.open-meteo.com/v1/archive?latitude=40.7128&longitude=-74.006&start_date=' + start + '&end_date=' + end + '&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum&temperature_unit=fahrenheit&timezone=America%2FNew_York');
     if(!res.ok) return {};
     const j = await res.json();
     const days = {};
     ((j.daily && j.daily.time) || []).forEach((d,i) => {
       const hi = j.daily.temperature_2m_max[i], lo = j.daily.temperature_2m_min[i];
-      if(hi != null && lo != null) days[d] = { hi: Math.round(hi), lo: Math.round(lo) };
+      const precip = (j.daily.precipitation_sum||[])[i], snow = (j.daily.snowfall_sum||[])[i];
+      if(hi != null && lo != null) days[d] = { hi: Math.round(hi), lo: Math.round(lo), precip: precip==null?null:precip, snow: snow==null?null:snow };
     });
-    cache[key] = { ts: Date.now(), days };
+    cache[key] = { ts: Date.now(), v: WEATHER_SCHEMA_V, days };
     try{ localStorage.setItem(LS_WEATHER, JSON.stringify(cache)); }catch(e){}
     return days;
   }catch(e){ return {}; }
+}
+// "Reasonably" rainy/snowy thresholds — precipitation_sum is mm, snowfall_sum is cm.
+function weatherIcon(day){
+  if(!day) return '';
+  if((day.snow||0) >= 0.5) return '❄️';
+  if((day.precip||0) >= 2) return '🌧️';
+  return '';
 }
 
 // LOCAL-time day key. The old build used toISOString() (UTC), which pushed any NYC
@@ -2054,22 +2411,55 @@ async function fetchMonthTemps(y, m){
 function localDayKey(d){
   return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
+function isWeekendKey(key){
+  const [ky,km,kd] = key.split('-').map(Number);
+  const dow = new Date(ky, km-1, kd).getDay();
+  return dow === 0 || dow === 6;
+}
 
 // Shift inference from REAL From/To clip intervals: cluster incidents when the gap from
-// one clip's end to the next clip's start is 2.5hr+; multi-incident clusters get 30min
+// one clip's end to the next clip's start is 1.5hr+; multi-incident clusters get 30min
 // padding each side (+1h); a lone incident counts its clip span + 0.5h.
+const SHIFT_GAP_MIN = 90; // 1.5 hours (was 2.5h)
 function inferHours(entries){
+  if(!entries.length) return 0;
   entries = entries.slice().sort((a,b)=>a.from-b.from);
   const shifts = [];
   let start = entries[0].from, end = entries[0].to, count = 1;
   for(let i=1;i<entries.length;i++){
     const gapMin = (entries[i].from - end)/60000;
-    if(gapMin >= 150){ shifts.push({span:(end-start)/3600000, count}); start = entries[i].from; count = 0; }
+    if(gapMin >= SHIFT_GAP_MIN){ shifts.push({span:(end-start)/3600000, count}); start = entries[i].from; count = 0; }
     if(entries[i].to > end || count === 0) end = entries[i].to;
     count++;
   }
   shifts.push({span:(end-start)/3600000, count});
   return shifts.reduce((s,sh) => s + Math.max(0, sh.span) + (sh.count > 1 ? 1 : 0.5), 0);
+}
+
+// A handful of source rows carry a corrupted "To" timestamp (date-rollover typos, AM/PM
+// flips) that implies a clip lasting hours or days when a real clip is ~3-5 minutes. One bad
+// row used to silently drag a whole day's inferred shift span with it (e.g. a 73-hour
+// "shift" caused by a single row whose To read 3 days later than its From). Anything over
+// MAX_SANE_CLIP_MIN is unreliable: clamped to a nominal short duration for hours math (in
+// calDayBuckets below), and separately surfaced via findSuspectClips() so it can be reported
+// rather than silently fixed — these are sheet data errors, not app bugs, and probably worth
+// an email to DEP to correct.
+const MAX_SANE_CLIP_MIN = 60;
+const NOMINAL_CLIP_MIN = 5;
+
+// Business-hours (weekday, 5am-6pm) vs. after-hours (weekends, or before 5am/after 6pm) split.
+// "Hours Worked" only reflects the main shift; after-hours sightings are counted (not
+// time-clustered) as "overtime trucks" instead.
+function isAfterHoursEntry(from){
+  const day = from.getDay(); // 0=Sun, 6=Sat
+  if(day === 0 || day === 6) return true;
+  const h = from.getHours();
+  return h >= 18 || h < 5;
+}
+function splitAfterHours(entries){
+  const main = [], overtime = [];
+  for(const e of entries) (isAfterHoursEntry(e.from) ? overtime : main).push(e);
+  return { main, overtime };
 }
 
 // Buckets by INCIDENT date (the From clip timestamp = when it actually happened).
@@ -2080,13 +2470,44 @@ function calDayBuckets(rows){
     if(!from) continue;
     let to = parseDate(r.clipTo);
     if(!to || to < from) to = from;
+    if((to - from) / 60000 > MAX_SANE_CLIP_MIN) to = new Date(from.getTime() + NOMINAL_CLIP_MIN*60000);
     const key = localDayKey(from);
     (byDay[key] = byDay[key] || []).push({ from, to, rec: r });
   }
   return byDay;
 }
 
+// Rows whose raw clip From/To implies an impossible duration — surfaced in New Money as
+// "worth emailing DEP about" rather than silently patched away. Uses the RAW (unclamped)
+// from/to so the reported gap matches what's actually sitting in the sheet.
+function findSuspectClips(){
+  const out = [];
+  for(const r of appData.merged){
+    const from = incidentDateOf(r);
+    const to = parseDate(r.clipTo);
+    if(!from || !to || to <= from) continue;
+    const impliedMin = (to - from) / 60000;
+    if(impliedMin > MAX_SANE_CLIP_MIN) out.push({ rec: r, from, to, impliedMin });
+  }
+  return out.sort((a,b) => b.impliedMin - a.impliedMin);
+}
+
 function moneyShort(n){ return '$' + Math.round(Number(n)||0).toLocaleString(); }
+// "579 days" -> "1 year 6 months 14 days" — years/months are calendar-average lengths (365.25 /
+// 30.44), so this is a readable approximation, not a precise calendar diff.
+function humanizeDays(totalDays){
+  totalDays = Math.round(totalDays);
+  if(totalDays <= 0) return '0 days';
+  const years = Math.floor(totalDays / 365.25);
+  const afterYears = totalDays - Math.round(years * 365.25);
+  const months = Math.floor(afterYears / 30.44);
+  const days = Math.round(afterYears - months * 30.44);
+  const parts = [];
+  if(years) parts.push(years + (years===1 ? ' year' : ' years'));
+  if(months) parts.push(months + (months===1 ? ' month' : ' months'));
+  if(days || !parts.length) parts.push(days + (days===1 ? ' day' : ' days'));
+  return parts.join(' ');
+}
 /* Leaflet (open-source maps) loads lazily from CDN the first time a day drilldown needs it. */
 let leafletLoading = null;
 let calMap = null;
@@ -2139,6 +2560,54 @@ function renderDayMap(entries){
 // Calendar "received": actual payments PLUS requested amounts — requested is as good as paid.
 function calReceivedFor(rec){ return receivedFor(rec) + (rec._rowType === 'requested' ? expectedPayoutFor(rec) : 0); }
 
+/* Leaflet.heat (density heat map plugin) loads lazily on top of core Leaflet, same
+   CDN/stall-guard pattern as loadLeaflet — only fetched once the Stats tab actually renders. */
+let leafletHeatLoading = null;
+function loadLeafletHeat(){
+  if(window.L && window.L.heatLayer) return Promise.resolve(true);
+  if(leafletHeatLoading) return leafletHeatLoading;
+  leafletHeatLoading = loadLeaflet().then(ok => {
+    if(!ok) return false;
+    if(window.L && window.L.heatLayer) return true;
+    return new Promise(res => {
+      try{
+        const js = document.createElement('script');
+        js.src = 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js';
+        js.onload = () => res(!!(window.L && window.L.heatLayer));
+        js.onerror = () => res(false);
+        document.head.appendChild(js);
+        setTimeout(() => res(!!(window.L && window.L.heatLayer)), 8000);
+      }catch(e){ res(false); }
+    });
+  });
+  return leafletHeatLoading;
+}
+let statsHeatMap = null;
+function renderStatsHeatmap(){
+  const el = document.getElementById('stats-heatmap');
+  if(!el) return;
+  const pts = appData.merged.map(r => [parseFloat(r.latitude), parseFloat(r.longitude)])
+    .filter(([lat,lng]) => isFinite(lat) && isFinite(lng) && (lat!==0 || lng!==0));
+  if(!pts.length){ el.innerHTML = '<div class="empty">No coordinates found in the master data yet.</div>'; return; }
+  loadLeafletHeat().then(ok => {
+    const mapEl = document.getElementById('stats-heatmap');
+    if(!mapEl) return;
+    if(!ok || !window.L){ mapEl.innerHTML = '<div class="empty">Map couldn\'t load (offline?) — ' + pts.length.toLocaleString() + ' incidents have coordinates.</div>'; return; }
+    if(statsHeatMap){ try{ statsHeatMap.remove(); }catch(e){} statsHeatMap = null; }
+    mapEl.innerHTML = '';
+    statsHeatMap = L.map(mapEl);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(statsHeatMap);
+    if(L.heatLayer) L.heatLayer(pts, { radius: 16, blur: 20, maxZoom: 15 }).addTo(statsHeatMap);
+    // Fit to the DENSE core (10th-90th percentile of lat/lng independently) rather than every
+    // point — a handful of filings far from the main cluster (e.g. the Bushwick hot spot) would
+    // otherwise drag the default view out until the actual hot area is a speck on the map.
+    const lats = pts.map(p=>p[0]).sort((a,b)=>a-b), lngs = pts.map(p=>p[1]).sort((a,b)=>a-b);
+    const pct = (arr, p) => arr[Math.min(arr.length-1, Math.floor(arr.length*p))];
+    const coreBounds = L.latLngBounds([pct(lats,0.1), pct(lngs,0.1)], [pct(lats,0.9), pct(lngs,0.9)]);
+    statsHeatMap.fitBounds(coreBounds.pad(0.15), { maxZoom: 15 });
+  });
+}
+
 function renderCalendar(){
   const dsFilter = document.getElementById('cal-filter-dataset').value;
   let rows = appData.merged.slice();
@@ -2163,7 +2632,7 @@ function renderCalendar(){
   const lastYearPrefix = (y-1) + '-' + String(m+1).padStart(2,'0');
 
   const dayStats = {};
-  let monthHours = 0, monthEst = 0, monthReceived = 0, monthFilings = 0;
+  let monthHours = 0, monthEst = 0, monthReceived = 0, monthFilings = 0, monthOvertime = 0;
   let lyReceived = 0, lyFilings = 0;
   for(const key of Object.keys(byDayAll)){
     const entries = byDayAll[key];
@@ -2172,11 +2641,12 @@ function renderCalendar(){
       lyReceived += entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
     }
     if(!key.startsWith(monthPrefix)) continue;
-    const hours = inferHours(entries);
+    const { main, overtime } = splitAfterHours(entries);
+    const hours = inferHours(main);
     const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
     const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
-    dayStats[key] = { hours, est, received, count: entries.length };
-    monthHours += hours; monthEst += est; monthReceived += received; monthFilings += entries.length;
+    dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length };
+    monthHours += hours; monthEst += est; monthReceived += received; monthFilings += entries.length; monthOvertime += overtime.length;
   }
 
   document.getElementById('cal-label').textContent = calCursor.toLocaleString(undefined,{month:'long', year:'numeric'});
@@ -2190,37 +2660,84 @@ function renderCalendar(){
   for(let yy=maxY; yy>=minY; yy--) yOpts += `<option value="${yy}"${yy===y?' selected':''}>${yy}</option>`;
   yearSel.innerHTML = yOpts;
   const lyLabel = calCursor.toLocaleString(undefined,{month:'short'}) + ' ' + (y-1);
+  const activeDayKeys = Object.keys(dayStats).filter(k => !isWeekendKey(k));
+  const qualifyingDayKeys = activeDayKeys.filter(k => dayStats[k].count > 3);
+  const avgTrucksPerDay = qualifyingDayKeys.length ? qualifyingDayKeys.reduce((s,k)=>s+dayStats[k].count,0)/qualifyingDayKeys.length : null;
+  const rateDays = qualifyingDayKeys.filter(k => dayStats[k].hours > 0);
+  const avgHourlyRate = rateDays.length ? rateDays.reduce((s,k)=>s+dayStats[k].est/dayStats[k].hours,0)/rateDays.length : null;
   document.getElementById('cal-stats').innerHTML = `
     <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${monthFilings}</div><div class="sub">vs ${lyFilings} in ${lyLabel}</div></div>
-    <div class="stat-card"><div class="label">Active Days</div><div class="value blue">${Object.keys(dayStats).length}</div></div>
-    <div class="stat-card"><div class="label">Hours Worked</div><div class="value blue">${monthHours.toFixed(1)}</div><div class="sub">from clip From/To clusters</div></div>
+    <div class="stat-card"><div class="label">Active Days</div><div class="value blue">${activeDayKeys.length}</div><div class="sub">weekdays only</div></div>
+    <div class="stat-card"><div class="label">Hours Worked</div><div class="value blue">${monthHours.toFixed(1)}</div><div class="sub">main shift only${monthOvertime?` · ${monthOvertime} overtime trucks`:''}</div></div>
+    <div class="stat-card"><div class="label">Avg Trucks / Day Worked</div><div class="value blue">${avgTrucksPerDay!=null?avgTrucksPerDay.toFixed(1):'—'}</div><div class="sub">weekdays with 4+ trucks only</div></div>
+    <div class="stat-card"><div class="label">Avg Hourly Rate</div><div class="value orange">${avgHourlyRate!=null?'$'+avgHourlyRate.toFixed(0)+'/hr':'—'}</div><div class="sub">estimated payout ÷ hours, same days</div></div>
     <div class="stat-card"><div class="label">Estimated From Month</div><div class="value orange">${money(monthEst)}</div><div class="sub">offense-aware expected payouts</div></div>
     <div class="stat-card"><div class="label">Received So Far</div><div class="value success">${money(monthReceived)}</div><div class="sub">incl. requested (as good as paid) · vs ${money(lyReceived)} in ${lyLabel} · ${monthEst>0 ? (monthReceived/monthEst*100).toFixed(0)+'% of est.' : '—'}</div></div>
   `;
 
   const heads = document.getElementById('cal-heads');
-  heads.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('');
+  heads.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('') + '<div class="cal-head">Week</div>';
 
   const maxEst = Math.max(0, ...Object.values(dayStats).map(x=>x.est));
   const grid = document.getElementById('cal-grid');
   const startDow = new Date(y, m, 1).getDay();
   const daysInMonth = new Date(y, m+1, 0).getDate();
-  let cells = '';
-  for(let i=0;i<startDow;i++) cells += `<div class="cal-cell empty-day"></div>`;
-  for(let day=1; day<=daysInMonth; day++){
-    const key = monthPrefix + '-' + String(day).padStart(2,'0');
-    const s = dayStats[key];
-    // red→green heat by ESTIMATED amount: the month's biggest expected-money day glows green
+
+  // stats for ANY date (used by dimmed spillover days from the neighbouring months)
+  const statsForKey = (key) => {
+    const entries = byDayAll[key];
+    if(!entries) return null;
+    const { main, overtime } = splitAfterHours(entries);
+    return { hours: inferHours(main), est: entries.reduce((a,x)=>a+expectedPayoutFor(x.rec),0),
+             received: entries.reduce((a,x)=>a+calReceivedFor(x.rec),0), count: entries.length, overtime: overtime.length };
+  };
+  const cellHTML = (dateObj, spill) => {
+    const key = localDayKey(dateObj);
+    const st = spill ? statsForKey(key) : dayStats[key];
     let tint = '';
-    if(s){
-      const ratio = maxEst > 0 ? Math.min(1, s.est/maxEst) : 0;
+    if(st && !spill){
+      const ratio = maxEst > 0 ? Math.min(1, st.est/maxEst) : 0;
       tint = `style="background:hsla(${Math.round(ratio*120)}, 65%, 45%, 0.22);"`;
     }
     const sel = (key === calSelectedDay) ? ' selected' : '';
-    cells += `<div class="cal-cell${sel}" data-date="${key}" ${s ? `data-day="${key}"` : ''} ${tint}>
-      <div class="d">${day}<span class="wx"></span></div>
-      ${s ? `<div class="cnt">${s.count}</div><div class="sub2">${s.hours.toFixed(1)}h</div><div class="sub2">est ${moneyShort(s.est)}</div><div class="sub2">rec'd ${moneyShort(s.received)}</div>` : ''}
+    const rate = (st && st.hours > 0) ? Math.round(st.est / st.hours) : null;
+    return `<div class="cal-cell${sel}${spill?' spill':''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
+      <span class="wx-icon"></span>
+      <div class="d">${dateObj.getDate()}<span class="wx"></span></div>
+      ${st ? `<div class="cnt">${st.count}</div><div class="sub2 hrs">${st.hours.toFixed(1)}h${st.overtime?` +${st.overtime}OT`:''}</div>${rate!=null?`<div class="sub2 rate">$${rate}/hr</div>`:''}<div class="sub2">est ${moneyShort(st.est)}</div><div class="sub2">rec'd ${moneyShort(st.received)}</div>` : ''}
     </div>`;
+  };
+
+  // Pass 1: gather each week's totals across the whole month so shading can be scaled
+  // against the WEEK range (a separate scale from the per-day cell shading above).
+  const weeks = [];
+  {
+    let cursor = new Date(y, m, 1 - startDow); // first Sunday of the grid
+    const lastDay = new Date(y, m, daysInMonth);
+    while(cursor <= lastDay){
+      let wCount = 0, wEst = 0, wRec = 0;
+      for(let i=0;i<7;i++){
+        const dObj = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + i);
+        const st = statsForKey(localDayKey(dObj));
+        if(st){ wCount += st.count; wEst += st.est; wRec += st.received; } // totals include spillover days
+      }
+      weeks.push({ start: cursor, wCount, wEst, wRec });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 7);
+    }
+  }
+  const weekMaxEst = Math.max(0, ...weeks.map(w=>w.wEst));
+  // Pass 2: render, now that the week-shading scale is known.
+  let cells = '';
+  for(const wk of weeks){
+    let weekCells = '';
+    for(let i=0;i<7;i++){
+      const dObj = new Date(wk.start.getFullYear(), wk.start.getMonth(), wk.start.getDate() + i);
+      const spill = dObj.getMonth() !== m || dObj.getFullYear() !== y;
+      weekCells += cellHTML(dObj, spill);
+    }
+    const wRatio = weekMaxEst > 0 ? Math.min(1, wk.wEst/weekMaxEst) : 0;
+    cells += weekCells + `<div class="cal-week-total" style="background:hsla(${Math.round(wRatio*120)}, 65%, 40%, 0.28);" title="Week of ${wk.start.toLocaleDateString()} — includes days from adjacent months">
+      <b>${wk.wCount}</b><span>est ${moneyShort(wk.wEst)}</span><span>rec'd ${moneyShort(wk.wRec)}</span></div>`;
   }
   grid.innerHTML = cells;
 
@@ -2231,6 +2748,8 @@ function renderCalendar(){
     for(const dk of Object.keys(days)){
       const cell = grid.querySelector(`[data-date="${dk}"] .wx`);
       if(cell) cell.textContent = ` ${days[dk].hi}°/${days[dk].lo}°`;
+      const icon = grid.querySelector(`[data-date="${dk}"] .wx-icon`);
+      if(icon) icon.textContent = weatherIcon(days[dk]);
     }
   });
 
@@ -2261,7 +2780,8 @@ function renderCalendar(){
     drill.innerHTML = `<h3>${new Date(ky,km-1,kd).toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric', year:'numeric'})}</h3>
       <div class="grid" style="margin-bottom:10px;">
         <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${s.count}</div><div class="sub">${typeStr}</div></div>
-        <div class="stat-card"><div class="label">Hours</div><div class="value blue">${s.hours.toFixed(1)}</div></div>
+        <div class="stat-card"><div class="label">Hours</div><div class="value blue">${s.hours.toFixed(1)}</div><div class="sub">main shift only</div></div>
+        ${s.overtime ? `<div class="stat-card"><div class="label">Overtime Trucks</div><div class="value orange">${s.overtime}</div><div class="sub">before 5am/after 6pm or weekend</div></div>` : ''}
         <div class="stat-card"><div class="label">Estimated Total</div><div class="value orange">${money(s.est)}</div></div>
         <div class="stat-card"><div class="label">Received</div><div class="value success">${money(s.received)}</div><div class="sub">${s.est>0 ? (s.received/s.est*100).toFixed(0)+'% collected' : '—'}</div></div>
         <div class="stat-card"><div class="label">Still Outstanding</div><div class="value danger">${money(outstanding)}</div></div>
@@ -2313,6 +2833,64 @@ function lineChartSVG(points){
   const dots = points.map((p,i) => `<circle cx="${x(i).toFixed(1)}" cy="${yv(p.value).toFixed(1)}" r="2.5"><title>${esc(p.label)}: ${p.value}</title></circle>`).join('');
   return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}<polyline points="${pts}"/>${dots}${labels}</svg>`;
 }
+function barChartSVG(points){
+  const W = 940, H = 240, padL = 44, padR = 12, padT = 14, padB = 34;
+  const maxV = Math.max(1, ...points.map(p=>p.value));
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const n = points.length;
+  const bw = Math.max(4, (iw / n) * 0.6);
+  const x = i => padL + (n > 1 ? i/(n-1)*iw : iw/2);
+  const yv = v => padT + ih - (v/maxV)*ih;
+  const bars = points.map((p,i) => {
+    const cx = x(i), top = yv(p.value);
+    return `<rect x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${(padT+ih-top).toFixed(1)}" fill="var(--orange2)" rx="2"><title>${esc(p.label)}: ${p.value}</title></rect>`;
+  }).join('');
+  const step = Math.max(1, Math.floor(n/12));
+  const labels = points.map((p,i) => i % step === 0 || i === n-1
+    ? `<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle">${esc(p.label)}</text>` : '').join('');
+  const grid = [0,.25,.5,.75,1].map(f =>
+    `<line class="gridline" x1="${padL}" y1="${yv(maxV*f).toFixed(1)}" x2="${W-padR}" y2="${yv(maxV*f).toFixed(1)}"/>` +
+    `<text x="${padL-6}" y="${(yv(maxV*f)+4).toFixed(1)}" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
+  return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${labels}</svg>`;
+}
+/* Filled area chart with a rolling-average overlay and hover values. */
+function areaChartSVG(points, opts){
+  opts = opts || {};
+  const W = 960, H = 260, padL = 46, padR = 14, padT = 16, padB = 38;
+  const maxV = Math.max(1, ...points.map(p=>p.value));
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const x = i => padL + (points.length > 1 ? i/(points.length-1)*iw : iw/2);
+  const yv = v => padT + ih - (v/maxV)*ih;
+  const line = points.map((p,i)=>`${x(i).toFixed(1)},${yv(p.value).toFixed(1)}`).join(' ');
+  const area = `${padL},${padT+ih} ${line} ${(padL+iw).toFixed(1)},${padT+ih}`;
+  // rolling average
+  const win = opts.window || 4;
+  const roll = points.map((p,i) => {
+    const from = Math.max(0, i-win+1);
+    const slice = points.slice(from, i+1);
+    return slice.reduce((a,b)=>a+b.value,0)/slice.length;
+  });
+  const rollLine = roll.map((v,i)=>`${x(i).toFixed(1)},${yv(v).toFixed(1)}`).join(' ');
+  const step = Math.max(1, Math.floor(points.length/14));
+  const labels = points.map((p,i)=> i % step === 0 || i === points.length-1
+    ? `<text x="${x(i).toFixed(1)}" y="${H-12}" text-anchor="middle">${esc(p.label)}</text>` : '').join('');
+  const grid = [0,.25,.5,.75,1].map(f =>
+    `<line class="gridline" x1="${padL}" y1="${yv(maxV*f).toFixed(1)}" x2="${W-padR}" y2="${yv(maxV*f).toFixed(1)}"/>` +
+    `<text x="${padL-7}" y="${(yv(maxV*f)+4).toFixed(1)}" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
+  const dots = points.map((p,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${yv(p.value).toFixed(1)}" r="9" fill="transparent"><title>${esc(p.label)}: ${p.value} filings (4-wk avg ${roll[i].toFixed(1)})</title></circle>`).join('');
+  return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--orange)" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="var(--blue)" stop-opacity=".05"/>
+    </linearGradient></defs>
+    ${grid}
+    <polygon points="${area}" fill="url(#areaGrad)"/>
+    <polyline points="${line}" style="stroke:var(--orange2); stroke-width:2.5;"/>
+    <polyline points="${rollLine}" style="stroke:var(--blue2); stroke-width:2; stroke-dasharray:6 5; opacity:.85;"/>
+    ${dots}${labels}
+    <text x="${W-padR}" y="${padT+2}" text-anchor="end" style="fill:var(--blue2); font-size:11px;">— — 4-week average</text>
+  </svg>`;
+}
 function monthKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
 function monthLabel(key){ const [y,m] = key.split('-').map(Number); return new Date(y, m-1, 1).toLocaleString(undefined,{month:'short', year:'2-digit'}); }
 function lastMonths(map, n){
@@ -2348,6 +2926,31 @@ function renderStats(){
   document.getElementById('stats-funnel').innerHTML =
     funnelRow('All Identities', all) +
     ['AT','AT NYC','MBT'].map(ds => funnelRow(ds, all.filter(r => normalizeDS(r.dataset)===normalizeDS(ds)))).join('');
+
+  /* --- Hearings scoreboard: lifetime live snapshot --- */
+  // "Probably will never pay" reuses the grand formula's own survival curve rather than a
+  // made-up cutoff: an OPEN row whose survivalP (win rate × time-warped conversion tail) has
+  // faded under 5% is the same "zombie" the Estimated Grand Total already treats as ~worthless.
+  const NEVER_PAY_CUTOFF = 0.05;
+  let lifetimeViolation = 0, lifetimeDismissed = 0, paidNoHearing = 0, probablyNeverPay = 0;
+  all.forEach(r => {
+    const outcome = hearingOutcome(r);
+    if(outcome === 'violation') lifetimeViolation++;
+    else if(outcome === 'dismissed') lifetimeDismissed++;
+    if(r._rowType === 'paid' && outcome === null) paidNoHearing++;
+    if(categorize(r) === 'open'){
+      const inc = incidentDateOf(r);
+      const age = inc ? (Date.now() - inc.getTime()) / 86400000 : null;
+      if(age != null && survivalP(age) < NEVER_PAY_CUTOFF) probablyNeverPay++;
+    }
+  });
+  document.getElementById('stats-hearings-scoreboard').innerHTML = `
+    <div class="grid" style="margin-bottom:0;">
+      <div class="stat-card"><div class="label">In Violation</div><div class="value success">${lifetimeViolation.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">Dismissed</div><div class="value danger">${lifetimeDismissed.toLocaleString()}</div></div>
+      <div class="stat-card"><div class="label">Paid Without Hearing</div><div class="value blue">${paidNoHearing.toLocaleString()}</div><div class="sub">admitted / paid the ticket outright</div></div>
+      <div class="stat-card"><div class="label">Probably Will Never Pay</div><div class="value danger">${probablyNeverPay.toLocaleString()}</div><div class="sub">open, past ${(NEVER_PAY_CUTOFF*100).toFixed(0)}% survival odds</div></div>
+    </div>`;
 
   /* --- Collected by Month: paid + pending, grouped by INCIDENT month --- */
   const colByMonth = {};
@@ -2448,6 +3051,19 @@ function renderStats(){
     boroKeys.map(k => hbar(k, boros[k], boroMax, `${boros[k].toLocaleString()} (${(boros[k]/(boroTotal||1)*100).toFixed(1)}%)`, 'var(--blue)')).join('') ||
     '<div class="empty">No Borough column found in the master data yet.</div>';
 
+  /* --- Top 5 neighborhoods (nearest-centroid match against real NYC neighborhoods) --- */
+  const hoods = {};
+  all.forEach(r => {
+    const name = nearestNeighborhood(parseFloat(r.latitude), parseFloat(r.longitude));
+    if(name) hoods[name] = (hoods[name]||0) + 1;
+  });
+  const hoodKeys = Object.keys(hoods).sort((a,b)=>hoods[b]-hoods[a]).slice(0,5);
+  const hoodMax = Math.max(0, ...hoodKeys.map(k=>hoods[k]));
+  const hoodTotal = Object.values(hoods).reduce((s,v)=>s+v,0);
+  document.getElementById('stats-neighborhoods').innerHTML =
+    hoodKeys.map(k => hbar(k, hoods[k], hoodMax, `${hoods[k].toLocaleString()} (${(hoods[k]/(hoodTotal||1)*100).toFixed(1)}%)`, 'var(--purple)')).join('') ||
+    '<div class="empty">No located filings yet.</div>';
+
   /* --- Offense tiers --- */
   const off = {1:{n:0,est:0},2:{n:0,est:0},3:{n:0,est:0}};
   all.forEach(r => { const o = off[r.offense||1]; o.n++; o.est += expectedPayoutFor(r); });
@@ -2488,15 +3104,15 @@ function renderStats(){
     const p = normalizePlace(raw);
     if(!p) return;
     const kind = classifyPlace(p);
-    if(kind === 'school') nSchool++; else if(kind === 'park') nPark++; else nOther++;
+    if(kind === 'other') return; // unclassified places aren't schools or parks — excluded entirely
+    if(kind === 'school') nSchool++; else nPark++;
     (places[p] = places[p] || {n:0, kind}).n++;
   });
-  const spTotal = nSchool + nPark + nOther;
+  const spTotal = nSchool + nPark;
   document.getElementById('stats-school').innerHTML = spTotal ? `
     <div class="grid" style="margin-bottom:6px;">
       <div class="stat-card"><div class="label">Schools</div><div class="value blue">${nSchool.toLocaleString()}</div></div>
       <div class="stat-card"><div class="label">Parks</div><div class="value success">${nPark.toLocaleString()}</div></div>
-      ${nOther ? `<div class="stat-card"><div class="label">Other / Unclassified</div><div class="value orange">${nOther.toLocaleString()}</div></div>` : ''}
     </div>
     <p class="desc">${spTotal.toLocaleString()} of ${all.length.toLocaleString()} incidents (${(spTotal/all.length*100).toFixed(1)}%) were adjacent to a school or park.</p>` :
     '<div class="empty">No School or Park data found in the master sheets yet.</div>';
@@ -2515,34 +3131,77 @@ function renderStats(){
     owedKeys.map(k => hbar(k, owed[k].v, owedMax, `${money(owed[k].v)} (${owed[k].n} open)`, 'var(--orange2)')).join('') ||
     '<div class="empty">Nobody owes you anything right now. Suspicious.</div>';
 
-  /* --- Summons Volume Over Time: line graph of summonsed complaints per incident month --- */
-  const sumByMonth = {};
-  all.forEach(r => { if(!r.summons) return; const d = incidentDateOf(r); if(d) sumByMonth[monthKey(d)] = (sumByMonth[monthKey(d)]||0)+1; });
-  const smKeys = Object.keys(sumByMonth).sort();
-  document.getElementById('stats-summonsline').innerHTML = smKeys.length >= 2 ? lineChartSVG(smKeys.map(k=>({label:monthLabel(k), value:sumByMonth[k]}))) : '<div class="empty">Not enough months yet.</div>';
-
-  /* --- Revenue Over Time: vertical bars. Green = your 25% received. Yellow = the CEILING:
-     your 25% (capped at $250) if every outstanding summons paid in full. --- */
-  const revDual = {};
+  /* --- Hot spots vs. everywhere else --- */
+  const blockAgg = {}; // label -> {n, est, rec, days:Set, hot, violation, dismissed, admit, defaulted, regularPaid, resolved, disqOrDismissed}
+  let parsed = 0, unparsed = 0, hotN = 0;
+  const hotDays = new Set(), allDays = new Set();
   all.forEach(r => {
-    const d = incidentDateOf(r); if(!d) return;
-    const k = monthKey(d);
-    (revDual[k] = revDual[k] || {g:0,y:0});
-    revDual[k].g += receivedFor(r);
-    if(r._rowType !== 'paid' && r._rowType !== 'disqualified' && r._rowType !== 'dismissed')
-      revDual[k].y += computePayout(r.paidAmount || r.violationAmount || FINE_BY_OFFENSE[r.offense||1]);
+    const d = incidentDateOf(r);
+    const dayK = d ? localDayKey(d) : null;
+    if(dayK) allDays.add(dayK);
+    // A Bushwick "raw match" hot spot has no parsed block (_block is null — named streets
+    // aren't part of the numbered-avenue grid) but IS still located, via _hotBlock.
+    if(!r._block && !r._hotBlock){ unparsed++; return; }
+    parsed++;
+    const label = r._hotBlock || blockLabel(r._block);
+    const agg = (blockAgg[label] = blockAgg[label] || {n:0, est:0, rec:0, days:new Set(), hot:!!r._hotBlock,
+      violation:0, dismissed:0, admit:0, defaulted:0, regularPaid:0, resolved:0, disqOrDismissed:0});
+    agg.n++; agg.est += expectedPayoutFor(r); agg.rec += receivedFor(r);
+    if(dayK) agg.days.add(dayK);
+    if(r._hotBlock){ hotN++; if(dayK) hotDays.add(dayK); }
+    const outcome = hearingOutcome(r);
+    if(outcome === 'violation') agg.violation++;
+    else if(outcome === 'dismissed') agg.dismissed++;
+    if(paidTicketOutright(r)) agg.admit++;
+    if(r._rowType === 'paid' || r._rowType === 'requested'){
+      agg.resolved++;
+      if(wasDefaultJudgment(r)) agg.defaulted++; else agg.regularPaid++;
+    } else if(r._rowType === 'disqualified' || r._rowType === 'dismissed'){
+      agg.resolved++; agg.disqOrDismissed++;
+    }
   });
-  const rdKeys = Object.keys(revDual).sort().filter(k => revDual[k].g > 0 || revDual[k].y > 0);
-  const rdMax = Math.max(0, ...rdKeys.map(k => Math.max(revDual[k].g, revDual[k].y)));
-  document.getElementById('stats-revovertime').innerHTML = rdKeys.length ? `<div class="vbars">` +
-    rdKeys.map(k => `<div class="vb-month" title="${monthLabel(k)} — received ${money(revDual[k].g)}, potential ${money(revDual[k].y)}">
-      <div class="vb-pair">
-        <i class="g" style="height:${rdMax?Math.max(1,revDual[k].g/rdMax*100):0}%;" title="${monthLabel(k)} received: ${money(revDual[k].g)}"></i>
-        <i class="y" style="height:${rdMax?Math.max(1,revDual[k].y/rdMax*100):0}%;" title="${monthLabel(k)} potential: ${money(revDual[k].y)}"></i>
-      </div>
-      <div class="vb-label">${monthLabel(k)}</div>
-    </div>`).join('') + `</div>` :
-    '<div class="empty">No data yet.</div>';
+  const blockBreakdownTitle = agg => {
+    const hearingN = agg.violation + agg.dismissed;
+    const winPct = hearingN ? (agg.violation/hearingN*100).toFixed(0)+'%' : '—';
+    const disqPct = agg.resolved ? (agg.disqOrDismissed/agg.resolved*100).toFixed(0)+'%' : '—';
+    return `Went to hearing: ${hearingN} (${agg.violation} in violation, ${agg.dismissed} dismissed) · Win rate at hearing: ${winPct} · ` +
+      `Paid ticket outright: ${agg.admit} · Paid in default: ${agg.defaulted} vs regular: ${agg.regularPaid} · ` +
+      `Disqualified/dismissed of reviewed: ${disqPct} (${agg.disqOrDismissed}/${agg.resolved})`;
+  };
+  const hotList = Object.keys(blockAgg).filter(k=>blockAgg[k].hot).sort((a,b)=>blockAgg[b].n-blockAgg[a].n);
+  const otherList = Object.keys(blockAgg).filter(k=>!blockAgg[k].hot).sort((a,b)=>blockAgg[b].n-blockAgg[a].n).slice(0,10);
+  const hotMax = Math.max(1, ...hotList.map(k=>blockAgg[k].n));
+  const othMax = Math.max(1, ...otherList.map(k=>blockAgg[k].n));
+  document.getElementById('stats-hotblocks-tag').textContent =
+    parsed ? `${hotN.toLocaleString()} of ${parsed.toLocaleString()} located filings (${(hotN/parsed*100).toFixed(1)}%) · ${hotDays.size} of ${allDays.size} days` : '';
+  document.getElementById('stats-hotblocks').innerHTML =
+    (hotList.map(k => hbar(k, blockAgg[k].n, hotMax,
+      `${blockAgg[k].n} · ${blockAgg[k].days.size} days · est ${moneyShort(blockAgg[k].est)}`, 'var(--orange2)')).join('') ||
+     '<div class="empty">No filings matched the hot spot list.</div>') +
+    (unparsed ? `<p class="note">${unparsed.toLocaleString()} filings had addresses this couldn't resolve to a block (non-Manhattan grids, unusual formats) and are excluded from both panels.</p>` : '');
+  document.getElementById('stats-otherblocks').innerHTML =
+    otherList.map(k => hbar(k, blockAgg[k].n, othMax,
+      `${blockAgg[k].n} · ${blockAgg[k].days.size} days · est ${moneyShort(blockAgg[k].est)}`, 'var(--blue)', blockBreakdownTitle(blockAgg[k]))).join('') ||
+    '<div class="empty">No other blocks parsed yet.</div>';
+
+  /* --- Time to payment: incident -> payment received --- */
+  const paidDurations = all.filter(r => r._rowType === 'paid').map(r => {
+    const inc = incidentDateOf(r), paid = parseDate(r.paidDate);
+    return (inc && paid && paid >= inc) ? { r, days: Math.round((paid-inc)/86400000) } : null;
+  }).filter(Boolean);
+  if(paidDurations.length){
+    const shortest = paidDurations.reduce((a,b)=>a.days<=b.days?a:b);
+    const longest = paidDurations.reduce((a,b)=>a.days>=b.days?a:b);
+    const avgDays = paidDurations.reduce((s,x)=>s+x.days,0)/paidDurations.length;
+    const desc = x => `${esc(x.r.summons||('Complaint '+x.r.complaintNumber))} · ${esc(x.r.company)}`;
+    document.getElementById('stats-timetopay').innerHTML = `<div class="grid" style="margin-bottom:0;">
+        <div class="stat-card"><div class="label">Shortest</div><div class="value success" style="font-size:1.15em;">${humanizeDays(shortest.days)}</div><div class="sub">${desc(shortest)}</div></div>
+        <div class="stat-card"><div class="label">Average</div><div class="value blue" style="font-size:1.15em;">${humanizeDays(avgDays)}</div><div class="sub">${paidDurations.length.toLocaleString()} paid rows with a valid incident→payment gap</div></div>
+        <div class="stat-card"><div class="label">Longest</div><div class="value danger" style="font-size:1.15em;">${humanizeDays(longest.days)}</div><div class="sub">${desc(longest)}</div></div>
+      </div>`;
+  } else {
+    document.getElementById('stats-timetopay').innerHTML = '<div class="empty">No paid rows with both an incident date and a payment date yet.</div>';
+  }
 
   /* --- Disqualification / dismissal reasons ranked --- */
   const reasons = {};
@@ -2564,10 +3223,9 @@ function renderStats(){
     '<div class="empty">No disqualified or dismissed filings. Nice.</div>';
 
   /* --- Top companies (canonical names) — requested amounts count as good as paid --- */
-  const payByCo = {}, volByCo = {};
+  const payByCo = {};
   all.forEach(r => {
     if(isUnknownCo(r.companyNorm)) return; // "Unknown" = not identified yet, not a company
-    volByCo[r.companyNorm] = (volByCo[r.companyNorm]||0)+1;
     const v = receivedFor(r) + (r._rowType === 'requested' ? expectedPayoutFor(r) : 0);
     if(v > 0) payByCo[r.companyNorm] = (payByCo[r.companyNorm]||0) + v;
   });
@@ -2575,10 +3233,26 @@ function renderStats(){
   const topPayMax = Math.max(0, ...topPay.map(k=>payByCo[k]));
   document.getElementById('stats-top-payout').innerHTML =
     topPay.map(k => hbar(k, payByCo[k], topPayMax, money(payByCo[k]), 'var(--success)')).join('') || '<div class="empty">No payouts yet.</div>';
-  const topVol = Object.keys(volByCo).sort((a,b)=>volByCo[b]-volByCo[a]).slice(0,10);
-  const topVolMax = Math.max(0, ...topVol.map(k=>volByCo[k]));
+  /* --- Worst Companies: highest disqualification/dismissal rate among RESOLVED filings,
+     minimum sample size so a single bad case doesn't read as "100% won't pay" --- */
+  const coResolved = {};
+  all.forEach(r => {
+    if(isUnknownCo(r.companyNorm)) return;
+    if(!RESOLVED[r._rowType]) return;
+    const c = (coResolved[r.companyNorm] = coResolved[r.companyNorm] || {resolved:0, dead:0});
+    c.resolved++;
+    if(r._rowType === 'disqualified' || r._rowType === 'dismissed') c.dead++;
+  });
+  const WORST_CO_MIN_RESOLVED = 5;
+  const worstCo = Object.keys(coResolved)
+    .filter(k => coResolved[k].resolved >= WORST_CO_MIN_RESOLVED)
+    .map(k => ({ k, rate: coResolved[k].dead/coResolved[k].resolved, n: coResolved[k].resolved, dead: coResolved[k].dead }))
+    .sort((a,b) => b.rate - a.rate)
+    .slice(0,10);
+  const worstMax = Math.max(0, ...worstCo.map(x=>x.rate));
   document.getElementById('stats-top-volume').innerHTML =
-    topVol.map(k => hbar(k, volByCo[k], topVolMax, volByCo[k] + ' complaints', 'var(--orange2)')).join('');
+    worstCo.map(x => hbar(x.k, x.rate, worstMax, `${(x.rate*100).toFixed(0)}% (${x.dead}/${x.n} disqualified or dismissed)`, 'var(--danger)')).join('') ||
+    `<div class="empty">No company has ${WORST_CO_MIN_RESOLVED}+ resolved filings yet.</div>`;
 
   /* --- Top 8 schools/parks by incident count (standardized names) --- */
   const placeKeys = Object.keys(places).sort((a,b)=>places[b].n-places[a].n).slice(0,8);
@@ -2656,6 +3330,192 @@ function renderStats(){
   document.getElementById('stats-hour').innerHTML =
     dayHours.map(({label, b}) => hbar(label, b.n, hodMax, b.n.toLocaleString(), 'var(--orange2)')).join('') ||
     '<div class="empty">No timestamps found.</div>';
+
+  renderStatsHeatmap();
+}
+
+/* ============================== RENDER: DASHBOARD (home) ============================== */
+function goToTab(name){
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  const el = document.getElementById('tab-'+name);
+  if(el) el.classList.add('active');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+/* Market share: complaint numbers are issued sequentially citywide, so the highest number
+   seen minus the number in play at Jan 1 approximates every CACP filing made this year. */
+function marketShare(){
+  const year = new Date().getFullYear();
+  const nums = [];
+  let mine = 0, minThisYear = Infinity, maxThisYear = 0;
+  for(const r of appData.merged){
+    const n = parseInt(String(r.complaintNumber||'').replace(/\D/g,''), 10);
+    const d = incidentDateOf(r) || parseDate(r.dateSubmitted);
+    if(!isFinite(n) || !n || !d) continue;
+    nums.push(n);
+    if(d.getFullYear() === year){
+      mine++;
+      if(n < minThisYear) minThisYear = n;
+      if(n > maxThisYear) maxThisYear = n;
+    }
+  }
+  if(!mine || !isFinite(minThisYear) || maxThisYear <= minThisYear) return null;
+  const citywide = maxThisYear - minThisYear; // filings by everyone in the same window
+  if(citywide < mine) return null;
+  return { mine, citywide, pct: mine / citywide * 100, latest: maxThisYear };
+}
+
+function renderDashboard(){
+  const all = appData.merged;
+  const now = Date.now();
+
+  // ---- money strip ----
+  const received = all.reduce((s,r)=>s+receivedFor(r),0);
+  const requested = all.filter(r=>r._rowType==='requested').reduce((s,r)=>s+expectedPayoutFor(r),0);
+  const coming = all.filter(r=>{ const c=categorize(r); return c==='pifUnclaimed'||c==='defaulted'||c==='scheduled'||c==='open'; })
+                    .reduce((s,r)=>s+expectedPayoutFor(r),0);
+  const egt = all.reduce((s,r)=>s+expectedPayoutFor(r),0);
+  // month-over-month on payments actually received
+  const mk = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+  const nowD = new Date(), prevD = new Date(nowD.getFullYear(), nowD.getMonth()-1, 1);
+  let thisMo = 0, lastMo = 0;
+  all.forEach(r => { if(r._rowType!=='paid') return; const d = parseDate(r.paidDate); if(!d) return;
+    if(mk(d)===mk(nowD)) thisMo += receivedFor(r); else if(mk(d)===mk(prevD)) lastMo += receivedFor(r); });
+  const delta = lastMo>0 ? ((thisMo-lastMo)/lastMo*100) : null;
+  const ms = marketShare();
+
+  document.getElementById('dash-money').innerHTML = `
+    <div class="stat-card"><div class="label">Received To Date</div><div class="value success">${money(received)}</div>
+      <div class="sub">${money(thisMo)} this month${delta===null?'':` · ${delta>=0?'▲':'▼'} ${Math.abs(delta).toFixed(0)}% vs last`}</div></div>
+    <div class="stat-card"><div class="label">Requested</div><div class="value orange">${money(requested)}</div><div class="sub">confirmed, in the mail</div></div>
+    <div class="stat-card"><div class="label">Realistically Coming</div><div class="value blue">${money(coming)}</div><div class="sub">survival-weighted open money</div></div>
+    <div class="stat-card"><div class="label">Estimated Grand Total</div><div class="value orange">${money(egt)}</div><div class="sub">everything, start to finish</div></div>
+    ${ms ? `<div class="stat-card" title="Complaint numbers are sequential citywide: ${ms.citywide.toLocaleString()} were issued in the span covering your ${ms.mine.toLocaleString()} filings this year."><div class="label">Your Share of NYC</div><div class="value blue">${ms.pct.toFixed(1)}%</div><div class="sub">${ms.mine.toLocaleString()} of ~${ms.citywide.toLocaleString()} citywide filings this year</div></div>` : ''}
+  `;
+
+  // ---- action queue (just New Money now) ----
+  const lag = getLagModels();
+  const newMoney = getNewMoneyRows();
+  const q = [
+    { n:newMoney.length, title:'New money ready to claim', sub:'NYC shows paid in full, not yet requested', val:newMoney.reduce((s,r)=>s+r.payout,0), tab:'newmoney', color:'var(--success)' }
+  ].filter(x => x.n > 0);
+  document.getElementById('dash-queue-tag').textContent = q.length ? q.reduce((s,x)=>s+x.n,0).toLocaleString() + ' items' : 'all clear';
+  document.getElementById('dash-queue').innerHTML = q.map(x => `
+    <div class="queue-item" data-goto="${x.tab}">
+      <div class="qn" style="color:${x.color};">${x.n.toLocaleString()}</div>
+      <div class="qt"><b>${x.title}</b><span>${x.sub}</span></div>
+      ${x.val > 0 ? `<div class="qv">${money(x.val)}</div>` : ''}
+    </div>`).join('') || '<div class="empty">Nothing needs attention. Everything is filed, requested, or paid.</div>';
+
+  // ---- forecast + pace context (informational, not action items) ----
+  // Only rows whose forecast date is STILL AHEAD of today count as "coming in the next 60
+  // days" — a row already past its median-lag forecast date hasn't paid despite the model
+  // saying it should have, so it's a straggler with an unknown timeline, not a near-term
+  // arrival. Without the lower bound this bucket silently filled up with already-overdue
+  // rows and overstated what's actually about to land.
+  const requestedNow = all.filter(r => r._rowType === 'requested');
+  const in60 = requestedNow.filter(r => {
+    const d = parseDate(r.requestedDate);
+    if(!d) return false;
+    const daysWaiting = Math.floor((now - d.getTime())/86400000);
+    const est = estimatePaymentDate(d, daysWaiting, lag.payment);
+    // rows already past the typical lag get a REVISED estimate (see estimatePaymentDate) —
+    // a "rough" one (no historical precedent this old) is too uncertain to count as "coming".
+    if(!est.date || est.rough) return false;
+    const ts = est.date.getTime();
+    return ts > now && ts <= now + 60*86400000;
+  });
+  const forecast60 = in60.reduce((s,r) => s + expectedPayoutFor(r), 0);
+
+  const yearNow = new Date().getFullYear();
+  const curMonthIdx = new Date().getMonth();
+  const monthCounts = {};
+  all.forEach(r => {
+    const d = incidentDateOf(r);
+    if(d && d.getFullYear() === yearNow) monthCounts[d.getMonth()] = (monthCounts[d.getMonth()]||0) + 1;
+  });
+  let avgMonthlySubmissions = null, avgBasis = '';
+  if(curMonthIdx > 0){
+    let sum = 0;
+    for(let mi=0; mi<curMonthIdx; mi++) sum += (monthCounts[mi]||0);
+    avgMonthlySubmissions = sum / curMonthIdx;
+    avgBasis = `Jan-${new Date(2000,curMonthIdx-1,1).toLocaleString(undefined,{month:'short'})} ${yearNow}, completed months only`;
+  } else {
+    avgMonthlySubmissions = monthCounts[0] || 0;
+    avgBasis = `${yearNow} just started — this is the partial month so far`;
+  }
+
+  document.getElementById('dash-stuff-extra').innerHTML = `
+    <div class="stat-card"><div class="label">Forecasted, Next 60 Days</div><div class="value blue">${money(forecast60)}</div><div class="sub">${in60.length} requested row${in60.length===1?'':'s'} due by the ${lag.payment.avg.toFixed(0)}-day payment-lag forecast</div></div>
+    <div class="stat-card"><div class="label">Avg Monthly Submissions</div><div class="value orange">${avgMonthlySubmissions.toFixed(1)}</div><div class="sub">${avgBasis}, by incident month</div></div>
+  `;
+
+  // ---- since last refresh ----
+  const log = (appData.changeLog||[]).slice(0, 8);
+  document.getElementById('dash-changes-tag').textContent = (appData.lastDiffCount||0) + ' new';
+  document.getElementById('dash-changes').innerHTML = log.map(c => `
+    <div class="chg-item" style="padding:7px 4px;">
+      <div class="when" style="min-width:96px;">${new Date(c.ts).toLocaleDateString()}</div>
+      <div class="what"><span class="badge chg-${c.type}">${CHANGE_LABELS[c.type]||c.type}</span>
+        <b>${esc(c.summons)}</b> · ${esc((c.company||'').slice(0,26))}
+        ${c.type==='new'?'':`<div class="delta">${esc(c.before)} → <b>${esc(c.after)}</b></div>`}</div>
+    </div>`).join('') || '<div class="empty">No changes logged yet.</div>';
+
+  // ---- last 10 active days ----
+  const byDay = calDayBuckets(all);
+  const recentDays = Object.keys(byDay).sort().reverse().slice(0,10);
+  document.getElementById('dash-days').innerHTML = recentDays.map(k => {
+    const e = byDay[k];
+    const est = e.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
+    const rec = e.reduce((s,x)=>s+calReceivedFor(x.rec),0);
+    const { main, overtime } = splitAfterHours(e);
+    const [ky,km,kd] = k.split('-').map(Number);
+    return `<div class="day-row" data-day-jump="${k}">
+      <div class="dd">${new Date(ky,km-1,kd).toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'})}</div>
+      <div class="dm">${e.length} incidents · ${inferHours(main).toFixed(1)}h${overtime.length ? ` · ${overtime.length} overtime truck${overtime.length===1?'':'s'}` : ''}</div>
+      <div><b>${moneyShort(est)}</b> est · ${moneyShort(rec)} in</div>
+    </div>`;
+  }).join('') || '<div class="empty">No activity recorded yet.</div>';
+
+  // ---- 8-week filing pace sparkline ----
+  const weeks = [];
+  for(let i=7;i>=0;i--){
+    const end = new Date(); end.setDate(end.getDate() - i*7); end.setHours(23,59,59,999);
+    const start = new Date(end); start.setDate(start.getDate()-6); start.setHours(0,0,0,0);
+    let n = 0;
+    for(const r of all){ const d = incidentDateOf(r); if(d && d >= start && d <= end) n++; }
+    weeks.push({ label: (start.getMonth()+1)+'/'+start.getDate(), value: n });
+  }
+  document.getElementById('dash-spark').innerHTML = weeks.some(w=>w.value)
+    ? barChartSVG(weeks) : '<div class="empty">No recent filings.</div>';
+
+  renderPlatesWidget();
+}
+
+const US_STATES = { AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming' };
+const BONUS_PROVINCES = { ON:'Ontario', QC:'Québec' }; // seen in the data but not part of the 50-state count
+function renderPlatesWidget(){
+  const seen = new Set(), bonusSeen = new Set();
+  appData.merged.forEach(r => {
+    const st = String(r.licenseState||'').toUpperCase().trim();
+    if(US_STATES[st]) seen.add(st);
+    else if(BONUS_PROVINCES[st]) bonusSeen.add(st);
+  });
+  const missing = Object.keys(US_STATES).filter(k => !seen.has(k)).sort();
+  const tag = document.getElementById('plates-tag');
+  if(tag) tag.textContent = `${seen.size} of 50 seen`;
+  const seenHTML = [...seen].sort().map(k => `<span class="badge paid" title="${esc(US_STATES[k])}">${k}</span>`).join(' ');
+  const missingHTML = missing.map(k => `<span class="badge none" title="${esc(US_STATES[k])}">${k}</span>`).join(' ');
+  const bonusHTML = [...bonusSeen].sort().map(k => `<span class="badge submitted" title="${esc(BONUS_PROVINCES[k])}">${k}</span>`).join(' ');
+  const el = document.getElementById('plates-widget');
+  if(!el) return;
+  el.innerHTML = `
+    <p class="desc" style="margin-top:0;">${seen.size} of 50 states spotted on a plate${missing.length ? `, ${missing.length} left to go` : ' — the full set! 🎉'}.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:${missing.length?'14px':'0'};">${seenHTML || '<span class="empty">None yet.</span>'}</div>
+    ${missing.length ? `<p class="note" style="margin-top:0;">Still need:</p><div style="display:flex; flex-wrap:wrap; gap:6px;">${missingHTML}</div>` : ''}
+    ${bonusSeen.size ? `<p class="note" style="margin-top:14px;">Bonus, doesn't count toward the 50: ${bonusHTML}</p>` : ''}
+  `;
 }
 
 /* ============================== RENDER: CHANGES TRACKER ============================== */
@@ -2672,11 +3532,18 @@ function renderChanges(){
   const counts = { new:0, summons_assigned:0, hearing_status:0, hearing_result:0, payment_amount:0 };
   log.forEach(c => { if(counts[c.type] !== undefined) counts[c.type]++; });
 
+  // Hearings card is per-refresh (only the most recent refresh's new events), unlike the other
+  // cards above which tally the whole retained log — newest events are unshifted to the front
+  // of changeLog, so the latest refresh's slice is exactly the first `sinceLast` entries.
+  const latestChanges = log.slice(0, sinceLast);
+  const newViolations = latestChanges.filter(c => c.type==='hearing_result' && /violation/i.test(c.after) && !/no violation/i.test(c.after)).length;
+  const newDismissed = latestChanges.filter(c => c.type==='hearing_result' && /dismissed/i.test(c.after)).length;
+
   document.getElementById('changes-count').textContent = log.length + ' logged';
   document.getElementById('changes-stats').innerHTML = `
     <div class="stat-card"><div class="label">Since Last Refresh</div><div class="value orange">${sinceLast}</div><div class="sub">change${sinceLast===1?'':'s'} detected on the most recent refresh</div></div>
     <div class="stat-card"><div class="label">New Complaints</div><div class="value success">${counts.new}</div></div>
-    <div class="stat-card"><div class="label">Summons Assigned</div><div class="value blue">${counts.summons_assigned}</div></div>
+    <div class="stat-card"><div class="label">Hearings</div><div class="value" style="font-size:1.15em;"><span style="color:var(--success);">${newViolations}</span> / <span style="color:var(--danger);">${newDismissed}</span></div><div class="sub">in violation / dismissed, this refresh</div></div>
     <div class="stat-card"><div class="label">Hearing Status</div><div class="value blue">${counts.hearing_status}</div></div>
     <div class="stat-card"><div class="label">Hearing Result</div><div class="value blue">${counts.hearing_result}</div></div>
     <div class="stat-card"><div class="label">Payment Amounts</div><div class="value orange">${counts.payment_amount}</div></div>
@@ -2699,8 +3566,19 @@ function renderChanges(){
 }
 
 /* ============================== RENDER ALL / TABS ============================== */
-function renderAll(){ renderCacheNote(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderCalendar(); renderStats(); renderChanges(); }
+function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); }
 
+document.getElementById('dash-queue').addEventListener('click', (e) => {
+  const item = e.target.closest('[data-goto]');
+  if(item) goToTab(item.dataset.goto);
+});
+document.getElementById('dash-days').addEventListener('click', (e) => {
+  const row = e.target.closest('[data-day-jump]');
+  if(!row) return;
+  const [y,m] = row.dataset.dayJump.split('-').map(Number);
+  calCursor = new Date(y, m-1, 1); calUserNavigated = true; calSelectedDay = row.dataset.dayJump;
+  goToTab('calendar'); renderCalendar();
+});
 // calendar day drilldown (delegated — cells rebuild every render)
 document.getElementById('cal-grid').addEventListener('click', (e) => {
   const cell = e.target.closest('.cal-cell[data-day]');
@@ -2715,6 +3593,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    // the heat map may have initialized while the Stats tab was hidden (zero-size container)
+    if(btn.dataset.tab === 'stats' && statsHeatMap){ setTimeout(() => { try{ statsHeatMap.invalidateSize(); }catch(e){} }, 0); }
   });
 });
 
