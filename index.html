@@ -251,7 +251,6 @@
   .cal-cell.spill{opacity:.32;}
   .wx{font-size:.8em; font-weight:400; color:var(--dim2); margin-left:3px;}
   #cal-map{height:340px; border-radius:10px; margin:10px 0 14px; border:1px solid var(--border); z-index:1;}
-  #stats-heatmap{aspect-ratio:1/1; max-width:640px; width:100%; height:auto; border-radius:10px; margin:0 auto; border:1px solid var(--border); z-index:1;}
   .map-pin{background:var(--blue); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35);}
   .cal-drill{margin-top:14px; border-top:1px solid var(--border); padding-top:10px;}
   .cal-drill h3{font-size:.9em; margin-bottom:8px;}
@@ -269,6 +268,7 @@
   .linechart polyline{fill:none; stroke:var(--blue); stroke-width:2.5;}
   .linechart circle{fill:var(--blue);}
   .linechart text{font-size:11px; fill:var(--dim);}
+  .linechart text.bar-val{font-size:12px; font-weight:700; fill:var(--text);}
   .linechart line.gridline{stroke:var(--border); stroke-width:1;}
   .vbars{display:flex; align-items:flex-end; gap:9px; overflow-x:auto; padding:10px 4px 4px;}
   .vb-month{display:flex; flex-direction:column; align-items:center; gap:5px; min-width:32px;}
@@ -572,8 +572,9 @@
       <div id="stats-timetopay"></div>
     </div>
     <div class="panel">
-      <h2>Heat Map <span class="tag">every located filing</span></h2>
-      <div id="stats-heatmap"></div>
+      <h2>Estimated Annual Income <span class="tag">this year + next 5</span></h2>
+      <p class="desc">Realized (already paid) plus projected money, bucketed by the year it's expected to land — paid rows use their real payment date, requested rows use the same forecast as the New Money tab, and everything else (open, defaulted, scheduled, unclaimed) is projected using the current pace: incident → typical time-to-request (survival-warped) → current payment lag.</p>
+      <div id="stats-annual"></div>
     </div>
   </section>
 
@@ -1455,6 +1456,17 @@ function survivalP(ageDays){
   const T = 1 - lo / SURV.allAges.length; // share of conversions that historically happened AFTER this point
   return SURV.W * T;
 }
+// Same curve as survivalP, but the raw T(age) (0..1) without the W multiplier — used to SPREAD
+// an already-known expected value across future years by when conversion is likely to land
+// (see estimatedAnnualIncome), rather than collapsing it to one point-in-time estimate.
+function survivalT(ageDays){
+  if(!SURV) buildSurvival();
+  if(SURV.W === null || SURV.allAges.length < 30) return ageDays < 365 ? 1 : (ageDays < 720 ? 0.55 : 0.15);
+  const eq = ageDays / SURV.warp;
+  let lo = 0, hi = SURV.allAges.length;
+  while(lo < hi){ const mid = (lo+hi)>>1; if(SURV.allAges[mid] <= eq) lo = mid+1; else hi = mid; }
+  return 1 - lo / SURV.allAges.length;
+}
 
 /* ---- Hearing-outcome classification (Best Single Blocks stats) ---- */
 function hearingOutcome(rec){
@@ -1780,13 +1792,20 @@ async function enrichFromNYC(records){
   for(let i=0;i<withSummons.length;i+=batchSize){
     const batch = withSummons.slice(i, i+batchSize);
     const list = batch.map(r => `'${r.summons}'`).join(',');
-    const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=summons_number in (${list})&$limit=${batchSize}`;
+    // The dataset's actual join column is "ticket_number", NOT "summons_number" — querying by
+    // summons_number throws a SOQL "no such column" error (HTTP 400). Since `if(!res.ok)
+    // continue` silently skipped the batch on any non-2xx response, live NYC enrichment has
+    // been failing on every single refresh: everything shown was just the sheet's own stale
+    // cached hearing_status/hearing_result/paid_amount, never actually re-checked against NYC.
+    // Confirmed live 8/6/2026: summons 000997229N is HTTP 400 on summons_number, but querying
+    // ticket_number='000997229N' returns real current data (hearing_status: "PAID IN FULL").
+    const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=ticket_number in (${list})&$limit=${batchSize}`;
     try{
       const res = await fetch(url);
       if(!res.ok) continue;
       const apiRows = await res.json();
       for(const row of apiRows){
-        const rec = batch.find(r => r.summons === row.summons_number);
+        const rec = batch.find(r => r.summons === row.ticket_number);
         if(!rec) continue;
         if(row.hearing_status) rec.hearingStatus = row.hearing_status;
         if(row.hearing_result) rec.hearingResult = row.hearing_result;
@@ -1991,6 +2010,51 @@ function estimatePaymentDate(reqDate, daysWaiting, payModel){
   }
   const revisedLag = daysWaiting * 1.15; // no precedent this old — conservative pad, not data-backed
   return { date: new Date(reqDate.getTime() + revisedLag*86400000), conditional: true, n: survivors.length, rough: true };
+}
+
+// A median-of-COMPLETED-conversions lag is a lagging indicator: it can only see requests that
+// already finished, so when the pipeline keeps getting slower, the very requests that would
+// drag the number up haven't resolved yet and stay invisible to it (that's the discrepancy
+// between the app showing ~181d while requests keep sailing past that with no payment). Instead,
+// look at what's STILL PENDING right now: among requests already past the historical benchmark,
+// their current (still-accruing) wait is real, live evidence of how slow it's actually gotten —
+// and it only ever grows as long as the backlog keeps aging without clearing.
+function currentPaymentLag(payModel){
+  const now2 = Date.now();
+  const stuckAges = appData.merged.filter(r => {
+    if(r._rowType !== 'requested') return false;
+    const rd = parseDate(r.requestedDate);
+    return rd && (now2 - rd.getTime())/86400000 > payModel.avg;
+  }).map(r => (now2 - parseDate(r.requestedDate).getTime())/86400000).sort((a,b)=>a-b);
+  if(stuckAges.length < 5) return { days: payModel.avg, n: 0 }; // not enough currently-stuck rows yet
+  return { days: stuckAges[Math.floor(stuckAges.length/2)], n: stuckAges.length };
+}
+
+// Payments cluster into discrete batches (~82/109/112/140/181/182/187/208/209/213/246 days,
+// not a smooth curve), so estimatePaymentDate's per-row estimate can still jump enough at a
+// cluster boundary that a row filed a few weeks later ends up with an EARLIER forecast than
+// one filed earlier — exactly the kind of thing that looks obviously wrong even though each
+// individual number is defensible. Guarantee it can't happen: sort by request date and clamp
+// every forecast to be no earlier than the running max seen among rows filed no later.
+function computePendingForecasts(){
+  const payLag = getLagModels().payment;
+  // Anchor the "not yet overdue" baseline to the CURRENT (live, climbing) lag rather than the
+  // stale completed-conversions median — see currentPaymentLag() for why the median undercounts.
+  const curLag = currentPaymentLag(payLag);
+  const effectiveLag = Object.assign({}, payLag, { avg: curLag.days });
+  const now = Date.now();
+  const rows = appData.merged.filter(r => r._rowType === 'requested').map(r => {
+    const reqDate = parseDate(r.requestedDate);
+    const daysWaiting = reqDate ? Math.floor((now - reqDate.getTime())/86400000) : -1;
+    const est = reqDate ? estimatePaymentDate(reqDate, daysWaiting, effectiveLag) : { date: null, conditional: false };
+    return { rec: r, reqDate, daysWaiting, forecast: est.date, conditional: est.conditional, rough: est.rough, n: est.n };
+  });
+  let runningMax = -Infinity;
+  for(const x of rows.filter(x => x.reqDate && x.forecast).sort((a,b) => a.reqDate - b.reqDate)){
+    if(x.forecast.getTime() < runningMax) x.forecast = new Date(runningMax);
+    else runningMax = x.forecast.getTime();
+  }
+  return rows;
 }
 
 /* ============================== RENDER: HOME ============================== */
@@ -2228,15 +2292,12 @@ function renderNewMoney(){
 
   const payLag = getLagModels().payment;
   const avgLag = payLag.avg;
+  const curLag = currentPaymentLag(payLag);
 
-  const now = new Date();
-  const pendingReq = appData.merged.filter(r => r._rowType === 'requested').map(r => {
-    const reqDate = parseDate(r.requestedDate);
-    const daysWaiting = reqDate ? Math.floor((now - reqDate)/86400000) : -1;
-    const est = estimatePaymentDate(reqDate, daysWaiting, payLag);
-    const expected = expectedPayoutFor(r);
-    return Object.assign({}, r, { _daysWaiting: daysWaiting, _forecast: est.date, _forecastConditional: est.conditional, _forecastRough: est.rough, _forecastN: est.n, _expected: expected });
-  }).sort((a,b) => b._daysWaiting - a._daysWaiting);
+  const pendingReq = computePendingForecasts().map(x => Object.assign({}, x.rec, {
+    _daysWaiting: x.daysWaiting, _forecast: x.forecast, _forecastConditional: x.conditional,
+    _forecastRough: x.rough, _forecastN: x.n, _reqDateParsed: x.reqDate, _expected: expectedPayoutFor(x.rec)
+  })).sort((a,b) => b._daysWaiting - a._daysWaiting);
 
   const totalExpected = pendingReq.reduce((s,r) => s + r._expected, 0);
   document.getElementById('pendreq-tag').textContent = `${money(totalExpected)} expected · sorted by longest wait first`;
@@ -2246,12 +2307,12 @@ function renderNewMoney(){
     let forecastCell = '—';
     if(r._forecast){
       if(!r._forecastConditional){
-        forecastCell = r._forecast.toLocaleDateString();
+        forecastCell = `<span class="est" title="Estimate: request date + the current ${Math.round(curLag.days)}-day payment lag.">~${r._forecast.toLocaleDateString()}</span>`;
       } else if(r._forecastRough){
-        forecastCell = `<span class="est overdue" title="Already waited ${r._daysWaiting}d — longer than every one of your last 24 months' paid requests, so there's no historical precedent to base this on. Rough extrapolation only.">~${r._forecast.toLocaleDateString()} (rough)</span>`;
+        forecastCell = `<span class="est overdue" title="Already waited ${r._daysWaiting}d — longer than every one of your last 24 months' paid requests, so there's no historical precedent to base this on. Rough extrapolation, and bumped forward if needed to stay no earlier than an earlier-filed request's estimate.">~${r._forecast.toLocaleDateString()} (rough)</span>`;
       } else {
-        const revisedTotalLag = Math.round((r._forecast - parseDate(r.requestedDate)) / 86400000);
-        forecastCell = `<span class="est" title="Already past the ${Math.round(avgLag)}d typical lag. Revised using the ${r._forecastN} of your last 24 months' requests that also took at least ${r._daysWaiting}d — they averaged ${revisedTotalLag}d total.">~${r._forecast.toLocaleDateString()}</span>`;
+        const revisedTotalLag = Math.round((r._forecast - r._reqDateParsed) / 86400000);
+        forecastCell = `<span class="est" title="Already past the current ${Math.round(curLag.days)}d lag. Revised using the ${r._forecastN} of your last 24 months' requests that also took at least ${r._daysWaiting}d (they landed around ${revisedTotalLag}d total) — and bumped forward if needed to stay no earlier than an earlier-filed request's estimate.">~${r._forecast.toLocaleDateString()}</span>`;
       }
     }
     return `<tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
@@ -2265,7 +2326,7 @@ function renderNewMoney(){
     <div class="stat-card"><div class="label">New Money Available</div><div class="value success">${newMoney.length}</div></div>
     <div class="stat-card"><div class="label">Est. Value</div><div class="value orange">${money(newMoney.reduce((s,r)=>s+r.payout,0))}</div></div>
     <div class="stat-card"><div class="label">Pending Requests</div><div class="value blue">${pendingReq.length}</div><div class="sub">${money(totalExpected)} expected</div></div>
-    <div class="stat-card"><div class="label">Avg. Payment Lag</div><div class="value blue">${avgLag.toFixed(0)} days</div><div class="sub">from your ${payLag.n} most recent paid requests</div></div>
+    <div class="stat-card" title="Median lag of completed payments is stale here — it only sees requests that already finished, so it can't reflect a pipeline that keeps getting slower. This instead uses the current (still-accruing) wait of requests already past that ${Math.round(avgLag)}d benchmark."><div class="label">Current Payment Lag</div><div class="value blue">${curLag.days.toFixed(0)} days</div><div class="sub">${curLag.n ? `median wait among ${curLag.n} requests already past the ${Math.round(avgLag)}d benchmark` : `not enough overdue requests yet — falling back to the ${payLag.n}-request historical median`}</div></div>
   `;
 }
 
@@ -2560,52 +2621,85 @@ function renderDayMap(entries){
 // Calendar "received": actual payments PLUS requested amounts — requested is as good as paid.
 function calReceivedFor(rec){ return receivedFor(rec) + (rec._rowType === 'requested' ? expectedPayoutFor(rec) : 0); }
 
-/* Leaflet.heat (density heat map plugin) loads lazily on top of core Leaflet, same
-   CDN/stall-guard pattern as loadLeaflet — only fetched once the Stats tab actually renders. */
-let leafletHeatLoading = null;
-function loadLeafletHeat(){
-  if(window.L && window.L.heatLayer) return Promise.resolve(true);
-  if(leafletHeatLoading) return leafletHeatLoading;
-  leafletHeatLoading = loadLeaflet().then(ok => {
-    if(!ok) return false;
-    if(window.L && window.L.heatLayer) return true;
-    return new Promise(res => {
-      try{
-        const js = document.createElement('script');
-        js.src = 'https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js';
-        js.onload = () => res(!!(window.L && window.L.heatLayer));
-        js.onerror = () => res(false);
-        document.head.appendChild(js);
-        setTimeout(() => res(!!(window.L && window.L.heatLayer)), 8000);
-      }catch(e){ res(false); }
-    });
+/* Estimated Annual Income: this year + next 5, realized + projected.
+   - paid rows: real paidDate, real dollars — no estimation.
+   - requested rows: same forecast as the New Money tab (computePendingForecasts), so the two
+     never disagree. Confirmed money — no probability left, just a timing guess.
+   - PIF-unclaimed (NYC already shows it paid in full, just not requested yet): also confirmed
+     money — assume the request goes out ~now, so it lands at now + current payment lag.
+   - defaulted / scheduled / open: real probability AND timing uncertainty. A single point
+     estimate here (e.g. "incident + typical age") collapses every row whose naive estimate is
+     already overdue onto the exact same date, producing a fake spike in one year and a cliff
+     to $0 after — not a believable forecast. Instead SPREAD each row's already-computed
+     expectedPayoutFor across years using the survival curve's own decay: survivalT(age) is the
+     share of historical conversions still unresolved at that age, so the drop in survivalT
+     across a given year is the (age-conditional) share of THIS row's remaining probability mass
+     expected to land in that year. Everything past year 6 falls into "beyond". */
+function estimatedAnnualIncome(){
+  const startYear = new Date().getFullYear();
+  const years = [0,1,2,3,4,5].map(i => startYear+i);
+  const buckets = {}; years.forEach(y => buckets[y] = { realized:0, projected:0 });
+  let beyond = 0, undated = 0;
+
+  const payLag = getLagModels().payment;
+  const curLag = currentPaymentLag(payLag);
+  const pendingForecast = new Map(computePendingForecasts().map(x => [x.rec, x.forecast]));
+  const now = Date.now();
+  const yearBoundaryAge = (inc, y) => (new Date(y,0,1).getTime() - inc.getTime()) / 86400000;
+
+  const bucketByDate = (date, value, realized) => {
+    if(!date){ undated += value; return; }
+    const y = date.getFullYear();
+    if(y < startYear) return; // already resolved before this forward-looking window starts
+    if(y > years[years.length-1]){ beyond += value; return; }
+    if(realized) buckets[y].realized += value; else buckets[y].projected += value;
+  };
+
+  appData.merged.forEach(r => {
+    const cat = categorize(r);
+    if(cat === 'dead') return; // $0 — no date needed
+    const value = expectedPayoutFor(r);
+    if(value <= 0.005) return;
+
+    if(cat === 'paid') return bucketByDate(parseDate(r.paidDate), value, true);
+    if(cat === 'requested') return bucketByDate(pendingForecast.get(r) || null, value, false);
+    if(cat === 'pifUnclaimed') return bucketByDate(new Date(now + curLag.days*86400000), value, false);
+
+    // defaulted / scheduled / open — spread across years by survival-curve decay
+    const inc = incidentDateOf(r);
+    if(!inc){ undated += value; return; }
+    const ageNow = Math.max(0, (now - inc.getTime())/86400000);
+    const Tnow = survivalT(ageNow);
+    if(Tnow <= 0.0001) return; // effectively a zombie already — negligible either way
+    let allocated = 0;
+    for(const y of years){
+      const startAge = (y === startYear) ? ageNow : yearBoundaryAge(inc, y);
+      const endAge = yearBoundaryAge(inc, y+1);
+      const frac = Math.max(0, (survivalT(startAge) - survivalT(endAge)) / Tnow);
+      const amt = value * frac;
+      if(amt > 0){ buckets[y].projected += amt; allocated += amt; }
+    }
+    if(value - allocated > 0) beyond += value - allocated;
   });
-  return leafletHeatLoading;
+
+  return { years, buckets, beyond, undated };
 }
-let statsHeatMap = null;
-function renderStatsHeatmap(){
-  const el = document.getElementById('stats-heatmap');
+function renderStatsAnnualIncome(){
+  const el = document.getElementById('stats-annual');
   if(!el) return;
-  const pts = appData.merged.map(r => [parseFloat(r.latitude), parseFloat(r.longitude)])
-    .filter(([lat,lng]) => isFinite(lat) && isFinite(lng) && (lat!==0 || lng!==0));
-  if(!pts.length){ el.innerHTML = '<div class="empty">No coordinates found in the master data yet.</div>'; return; }
-  loadLeafletHeat().then(ok => {
-    const mapEl = document.getElementById('stats-heatmap');
-    if(!mapEl) return;
-    if(!ok || !window.L){ mapEl.innerHTML = '<div class="empty">Map couldn\'t load (offline?) — ' + pts.length.toLocaleString() + ' incidents have coordinates.</div>'; return; }
-    if(statsHeatMap){ try{ statsHeatMap.remove(); }catch(e){} statsHeatMap = null; }
-    mapEl.innerHTML = '';
-    statsHeatMap = L.map(mapEl);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(statsHeatMap);
-    if(L.heatLayer) L.heatLayer(pts, { radius: 16, blur: 20, maxZoom: 15 }).addTo(statsHeatMap);
-    // Fit to the DENSE core (10th-90th percentile of lat/lng independently) rather than every
-    // point — a handful of filings far from the main cluster (e.g. the Bushwick hot spot) would
-    // otherwise drag the default view out until the actual hot area is a speck on the map.
-    const lats = pts.map(p=>p[0]).sort((a,b)=>a-b), lngs = pts.map(p=>p[1]).sort((a,b)=>a-b);
-    const pct = (arr, p) => arr[Math.min(arr.length-1, Math.floor(arr.length*p))];
-    const coreBounds = L.latLngBounds([pct(lats,0.1), pct(lngs,0.1)], [pct(lats,0.9), pct(lngs,0.9)]);
-    statsHeatMap.fitBounds(coreBounds.pad(0.15), { maxZoom: 15 });
-  });
+  const { years, buckets, beyond, undated } = estimatedAnnualIncome();
+  const totals = years.map(y => buckets[y].realized + buckets[y].projected);
+  const max = Math.max(1, ...totals);
+  const curYear = years[0];
+  el.innerHTML = years.map((y,i) => {
+    const b = buckets[y];
+    const total = totals[i];
+    const text = (y === curYear && b.realized > 0)
+      ? `${money(total)} (${money(b.realized)} received + ${money(b.projected)} projected)`
+      : `${money(total)} projected`;
+    return hbar(String(y), total, max, text, y===curYear ? 'var(--success)' : 'var(--blue)');
+  }).join('') +
+    ((beyond > 0.5 || undated > 0.5) ? `<p class="note">${beyond>0.5?`${money(beyond)} projected beyond ${years[years.length-1]}. `:''}${undated>0.5?`${money(undated)} has no incident date to project from.`:''}</p>` : '');
 }
 
 function renderCalendar(){
@@ -2694,17 +2788,30 @@ function renderCalendar(){
   const cellHTML = (dateObj, spill) => {
     const key = localDayKey(dateObj);
     const st = spill ? statsForKey(key) : dayStats[key];
+    const weekend = isWeekendKey(key);
     let tint = '';
     if(st && !spill){
-      const ratio = maxEst > 0 ? Math.min(1, st.est/maxEst) : 0;
-      tint = `style="background:hsla(${Math.round(ratio*120)}, 65%, 45%, 0.22);"`;
+      if(weekend){
+        // Any activity on a weekend is a bonus (no main shift expected), so it always gets a
+        // faint "good" green rather than being scored against the month's est/max like weekdays.
+        tint = `style="background:hsla(120, 55%, 45%, 0.14);"`;
+      } else {
+        const ratio = maxEst > 0 ? Math.min(1, st.est/maxEst) : 0;
+        tint = `style="background:hsla(${Math.round(ratio*120)}, 65%, 45%, 0.22);"`;
+      }
     }
     const sel = (key === calSelectedDay) ? ' selected' : '';
     const rate = (st && st.hours > 0) ? Math.round(st.est / st.hours) : null;
+    // hours=0 means every sighting that day was after-hours (always true on weekends, since
+    // nothing there counts as "main shift") — showing "0.0h" reads as a data gap, not a fact
+    // worth stating, so show the overtime-truck count instead.
+    const hoursLine = st && st.hours > 0
+      ? `<div class="sub2 hrs">${st.hours.toFixed(1)}h${st.overtime?` +${st.overtime}OT`:''}</div>`
+      : (st && st.overtime ? `<div class="sub2 hrs">${st.overtime} overtime truck${st.overtime===1?'':'s'}</div>` : '');
     return `<div class="cal-cell${sel}${spill?' spill':''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
       <span class="wx-icon"></span>
       <div class="d">${dateObj.getDate()}<span class="wx"></span></div>
-      ${st ? `<div class="cnt">${st.count}</div><div class="sub2 hrs">${st.hours.toFixed(1)}h${st.overtime?` +${st.overtime}OT`:''}</div>${rate!=null?`<div class="sub2 rate">$${rate}/hr</div>`:''}<div class="sub2">est ${moneyShort(st.est)}</div><div class="sub2">rec'd ${moneyShort(st.received)}</div>` : ''}
+      ${st ? `<div class="cnt">${st.count}</div>${hoursLine}${rate!=null?`<div class="sub2 rate">$${rate}/hr</div>`:''}<div class="sub2">est ${moneyShort(st.est)}</div><div class="sub2">rec'd ${moneyShort(st.received)}</div>` : ''}
     </div>`;
   };
 
@@ -2834,24 +2941,36 @@ function lineChartSVG(points){
   return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}<polyline points="${pts}"/>${dots}${labels}</svg>`;
 }
 function barChartSVG(points){
-  const W = 940, H = 240, padL = 44, padR = 12, padT = 14, padB = 34;
+  const W = 940, H = 240, padL = 16, padR = 16, padT = 30, padB = 34;
   const maxV = Math.max(1, ...points.map(p=>p.value));
   const iw = W - padL - padR, ih = H - padT - padB;
   const n = points.length;
-  const bw = Math.max(4, (iw / n) * 0.6);
-  const x = i => padL + (n > 1 ? i/(n-1)*iw : iw/2);
+  // Each bar gets its own equal-width SLOT and is centered within it — unlike a line chart's
+  // point markers (which can sit exactly at the edges), a bar has real width, so anchoring its
+  // center at the edge overflows it half a bar-width past the axis into the label margin. This
+  // was the actual bug: the first/last bars were colliding with the y-axis numbers and the
+  // right edge.
+  const slot = iw / n;
+  const bw = Math.max(6, slot * 0.55);
+  const cx = i => padL + slot*(i+0.5);
   const yv = v => padT + ih - (v/maxV)*ih;
-  const bars = points.map((p,i) => {
-    const cx = x(i), top = yv(p.value);
-    return `<rect x="${(cx-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${(padT+ih-top).toFixed(1)}" fill="var(--orange2)" rx="2"><title>${esc(p.label)}: ${p.value}</title></rect>`;
+  const grid = [0,.25,.5,.75,1].map(f => {
+    const y = yv(maxV*f);
+    return `<line class="gridline" x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}"/>`;
   }).join('');
-  const step = Math.max(1, Math.floor(n/12));
-  const labels = points.map((p,i) => i % step === 0 || i === n-1
-    ? `<text x="${x(i).toFixed(1)}" y="${H-10}" text-anchor="middle">${esc(p.label)}</text>` : '').join('');
-  const grid = [0,.25,.5,.75,1].map(f =>
-    `<line class="gridline" x1="${padL}" y1="${yv(maxV*f).toFixed(1)}" x2="${W-padR}" y2="${yv(maxV*f).toFixed(1)}"/>` +
-    `<text x="${padL-6}" y="${(yv(maxV*f)+4).toFixed(1)}" text-anchor="end">${Math.round(maxV*f)}</text>`).join('');
-  return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}${bars}${labels}</svg>`;
+  const bars = points.map((p,i) => {
+    const cxi = cx(i), top = yv(p.value), h = Math.max(0, padT+ih-top);
+    const valLabel = p.value > 0 ? `<text x="${cxi.toFixed(1)}" y="${(top-7).toFixed(1)}" text-anchor="middle" class="bar-val">${p.value}</text>` : '';
+    return `<rect x="${(cxi-bw/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="url(#barGrad)" rx="4"><title>${esc(p.label)}: ${p.value}</title></rect>${valLabel}`;
+  }).join('');
+  const labels = points.map((p,i) => `<text x="${cx(i).toFixed(1)}" y="${H-10}" text-anchor="middle">${esc(p.label)}</text>`).join('');
+  return `<svg class="linechart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--orange)"/>
+      <stop offset="100%" stop-color="var(--orange2)"/>
+    </linearGradient></defs>
+    ${grid}${bars}${labels}
+  </svg>`;
 }
 /* Filled area chart with a rolling-average overlay and hover values. */
 function areaChartSVG(points, opts){
@@ -3331,7 +3450,7 @@ function renderStats(){
     dayHours.map(({label, b}) => hbar(label, b.n, hodMax, b.n.toLocaleString(), 'var(--orange2)')).join('') ||
     '<div class="empty">No timestamps found.</div>';
 
-  renderStatsHeatmap();
+  renderStatsAnnualIncome();
 }
 
 /* ============================== RENDER: DASHBOARD (home) ============================== */
@@ -3409,24 +3528,20 @@ function renderDashboard(){
     </div>`).join('') || '<div class="empty">Nothing needs attention. Everything is filed, requested, or paid.</div>';
 
   // ---- forecast + pace context (informational, not action items) ----
-  // Only rows whose forecast date is STILL AHEAD of today count as "coming in the next 60
+  // Only rows whose forecast date is STILL AHEAD of today count as "coming in the next 30
   // days" — a row already past its median-lag forecast date hasn't paid despite the model
   // saying it should have, so it's a straggler with an unknown timeline, not a near-term
   // arrival. Without the lower bound this bucket silently filled up with already-overdue
   // rows and overstated what's actually about to land.
-  const requestedNow = all.filter(r => r._rowType === 'requested');
-  const in60 = requestedNow.filter(r => {
-    const d = parseDate(r.requestedDate);
-    if(!d) return false;
-    const daysWaiting = Math.floor((now - d.getTime())/86400000);
-    const est = estimatePaymentDate(d, daysWaiting, lag.payment);
-    // rows already past the typical lag get a REVISED estimate (see estimatePaymentDate) —
-    // a "rough" one (no historical precedent this old) is too uncertain to count as "coming".
-    if(!est.date || est.rough) return false;
-    const ts = est.date.getTime();
-    return ts > now && ts <= now + 60*86400000;
+  // Same computation (and the same monotonic ordering pass) as the New Money tab's pending-
+  // requests table, so the two numbers never disagree with each other.
+  const in30 = computePendingForecasts().filter(x => {
+    // "rough" = no historical precedent waited this long — too uncertain to count as "coming".
+    if(!x.forecast || x.rough) return false;
+    const ts = x.forecast.getTime();
+    return ts > now && ts <= now + 30*86400000;
   });
-  const forecast60 = in60.reduce((s,r) => s + expectedPayoutFor(r), 0);
+  const forecast30 = in30.reduce((s,x) => s + expectedPayoutFor(x.rec), 0);
 
   const yearNow = new Date().getFullYear();
   const curMonthIdx = new Date().getMonth();
@@ -3447,7 +3562,7 @@ function renderDashboard(){
   }
 
   document.getElementById('dash-stuff-extra').innerHTML = `
-    <div class="stat-card"><div class="label">Forecasted, Next 60 Days</div><div class="value blue">${money(forecast60)}</div><div class="sub">${in60.length} requested row${in60.length===1?'':'s'} due by the ${lag.payment.avg.toFixed(0)}-day payment-lag forecast</div></div>
+    <div class="stat-card"><div class="label">Forecasted, Next 30 Days</div><div class="value blue">${money(forecast30)}</div><div class="sub">${in30.length} requested row${in30.length===1?'':'s'} due by the current ${currentPaymentLag(lag.payment).days.toFixed(0)}-day payment-lag forecast</div></div>
     <div class="stat-card"><div class="label">Avg Monthly Submissions</div><div class="value orange">${avgMonthlySubmissions.toFixed(1)}</div><div class="sub">${avgBasis}, by incident month</div></div>
   `;
 
@@ -3593,8 +3708,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-    // the heat map may have initialized while the Stats tab was hidden (zero-size container)
-    if(btn.dataset.tab === 'stats' && statsHeatMap){ setTimeout(() => { try{ statsHeatMap.invalidateSize(); }catch(e){} }, 0); }
   });
 });
 
