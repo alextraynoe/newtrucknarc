@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trucknarc Pro</title>
+<title>TRUCKNARC Pro</title>
 <style>
   :root{
     --bg:#f4f6fa; --panel:#ffffff; --panel2:#f0f3f8; --border:#e2e7f0; --border2:#cdd6e4;
@@ -290,7 +290,7 @@
   <header>
     <div class="title">
       <div>
-        <h1>🚚 Trucknarc Pro</h1>
+        <h1>🚚 TRUCKNARC Pro</h1>
       </div>
     </div>
     <div class="actions">
@@ -332,7 +332,7 @@
       </div>
     </div>
     <div class="panel">
-      <h2>Filing Pace <span class="tag">last 8 weeks</span></h2>
+      <h2>Weekly Totals <span class="tag">last 8 weeks</span></h2>
       <div id="dash-spark"></div>
     </div>
     <div class="panel">
@@ -3625,7 +3625,7 @@ function renderDashboard(){
     </div>`;
   }).join('') || '<div class="empty">No activity recorded yet.</div>';
 
-  // ---- Filing Pace: total submissions per calendar week (Sun-Sat, same week convention as
+  // ---- Weekly Totals: total submissions per calendar week (Sun-Sat, same week convention as
   // Calendar/Top Weeks elsewhere in the app), last 8 weeks. ----
   const fpWeekTotals = {};
   all.forEach(r => {
