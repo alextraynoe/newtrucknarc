@@ -1524,6 +1524,16 @@ function egtBreakdown(){
   }
   return cats;
 }
+// Human-readable version of egtBreakdown(), shared by the desktop hover tooltip and the
+// mobile tap-to-alert fallback (native title="" tooltips don't fire on iOS Safari touch).
+function egtBreakdownText(){
+  if(!SURV) buildSurvival();
+  const b = egtBreakdown();
+  const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×W', open:'Open ×W×T'};
+  const lines = Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev));
+  const survLine = 'W=' + (SURV.W==null?'n/a':(SURV.W*100).toFixed(1)+'%') + ' · warp=×' + SURV.warp.toFixed(2) + ' · resolved=' + SURV.resolvedN;
+  return lines.join(' · ') + '\n' + survLine;
+}
 /* Incident-time basis: the From clip timestamp is when the violation actually HAPPENED.
    All calendar/stats date math uses this, falling back to submission date for old rows. */
 function incidentDateOf(rec){ return parseDate(rec.clipFrom) || parseDate(rec.dateSubmitted); }
@@ -2288,7 +2298,7 @@ function renderHomeStats(){
     <div class="stat-card"><div class="label">Paid</div><div class="value success">${paidCount.toLocaleString()}</div><div class="sub">${money(totalCollected)} collected</div></div>
     <div class="stat-card"><div class="label">Pending Amount</div><div class="value orange">${money(pendingAmount)}</div><div class="sub">${requestedRows.length} requested, not yet received</div></div>
     <div class="stat-card"><div class="label">Paid + Pending</div><div class="value blue">${money(paidPlusPending)}</div><div class="sub">in hand or in the pipeline</div></div>
-    <div class="stat-card" title="${(() => { const b = egtBreakdown(); const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×W', open:'Open ×W×T'}; return Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev)).join(' · '); })()}"><div class="label">Estimated Grand Total</div><div class="value orange">${money(estGrandTotal)}</div><div class="sub">hover for the full breakdown · ${eligibleCount.toLocaleString()} live rows</div></div>
+    <div class="stat-card" title="${esc(egtBreakdownText())}" onclick="alert(egtBreakdownText())" style="cursor:pointer;"><div class="label">Estimated Grand Total</div><div class="value orange">${money(estGrandTotal)}</div><div class="sub">hover or tap for the full breakdown · ${eligibleCount.toLocaleString()} live rows</div></div>
     <div class="stat-card"><div class="label">By Dataset</div><div class="value blue" style="font-size:.95em;">AT ${byDataset.AT} · AT NYC ${byDataset['AT NYC']} · Alt ${byDataset.MBT}</div></div>
   `;
 }
@@ -3625,14 +3635,15 @@ function renderDashboard(){
     </div>`;
   }).join('') || '<div class="empty">No activity recorded yet.</div>';
 
-  // ---- Weekly Totals: total submissions per calendar week (Sun-Sat, same week convention as
-  // Calendar/Top Weeks elsewhere in the app), last 8 weeks. ----
+  // ---- Weekly Totals: total incidents per calendar week (Sun-Sat), same incident-date
+  // bucketing (calDayBuckets) the Calendar tab's week-total row uses, so the two agree. ----
+  const fpByDay = calDayBuckets(all);
   const fpWeekTotals = {};
-  all.forEach(r => {
-    const d = parseDate(r.dateSubmitted);
-    if(!d) return;
-    const sun = new Date(d); sun.setDate(d.getDate() - d.getDay()); sun.setHours(0,0,0,0);
-    fpWeekTotals[localDayKey(sun)] = (fpWeekTotals[localDayKey(sun)] || 0) + 1;
+  Object.keys(fpByDay).forEach(key => {
+    const [y,m,d] = key.split('-').map(Number);
+    const dObj = new Date(y, m-1, d);
+    const sun = new Date(dObj); sun.setDate(dObj.getDate() - dObj.getDay()); sun.setHours(0,0,0,0);
+    fpWeekTotals[localDayKey(sun)] = (fpWeekTotals[localDayKey(sun)] || 0) + fpByDay[key].length;
   });
   const weeks = Object.keys(fpWeekTotals).sort().slice(-8).map(k => {
     const [y,m,d] = k.split('-').map(Number);
