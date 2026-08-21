@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TRUCKNARC</title>
+<title>Trucknarc Pro</title>
 <style>
   :root{
     --bg:#f4f6fa; --panel:#ffffff; --panel2:#f0f3f8; --border:#e2e7f0; --border2:#cdd6e4;
@@ -290,7 +290,7 @@
   <header>
     <div class="title">
       <div>
-        <h1>🚚 TRUCKNARC</h1>
+        <h1>🚚 Trucknarc Pro</h1>
       </div>
     </div>
     <div class="actions">
@@ -1057,8 +1057,12 @@ async function fetchCSV(gid, label){
       if(!res.ok) throw new Error(attempt.name + ': HTTP ' + res.status);
       const text = await res.text();
       if(!text || text.trim().length === 0) throw new Error(attempt.name + ': empty response');
+      // A tab that's valid but genuinely has zero DATA rows (e.g. nothing requested yet) still
+      // parses to an empty array here — that's success, not failure. A bad/nonexistent gid
+      // already comes back as a non-2xx (caught by res.ok above), so there's nothing left to
+      // validate here; treating "0 data rows" as an error used to force a perfectly fine empty
+      // tab through the entire slow proxy fallback chain for nothing.
       const rows = parseCSV(text);
-      if(!rows.length) throw new Error(attempt.name + ': parsed 0 rows (check the gid/sharing settings for this tab)');
       delete fetchErrors[label];
       return rows;
     }catch(e){
