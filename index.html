@@ -291,7 +291,6 @@
     <div class="title">
       <div>
         <h1>🚚 TRUCKNARC</h1>
-        <div class="sub">They idle. You collect.</div>
       </div>
     </div>
     <div class="actions">
@@ -347,7 +346,7 @@
     <div class="grid" id="home-stats"></div>
     <div class="panel">
       <h2>All Complaints <span class="tag" id="home-count">0 records</span></h2>
-      <p class="desc">Merged across AT, AT NYC and MBT, sorted by submission date (most recent first). Disqualified and dismissed complaints always remain visible and counted.</p>
+      <p class="desc">Merged across AT, AT NYC and Alt, sorted by submission date (most recent first). Disqualified and dismissed complaints always remain visible and counted.</p>
       <div class="legend">
         <span><i style="background:#d4edda;"></i> Paid</span>
         <span><i style="background:#fff3cd;"></i> Requested</span>
@@ -362,7 +361,7 @@
           <option value="">All datasets</option>
           <option value="AT">AT</option>
           <option value="AT NYC">AT NYC</option>
-          <option value="MBT">MBT</option>
+          <option value="MBT">Alt</option>
         </select>
         <select id="home-filter-status">
           <option value="">All statuses</option>
@@ -441,7 +440,7 @@
           <option value="">All datasets</option>
           <option value="AT">AT</option>
           <option value="AT NYC">AT NYC</option>
-          <option value="MBT">MBT</option>
+          <option value="MBT">Alt</option>
         </select>
       </div>
       <div class="cal-grid with-totals" id="cal-heads"></div>
@@ -562,8 +561,8 @@
         <div id="stats-hotblocks"></div>
       </div>
       <div class="panel">
-        <h2>Best Single Blocks <span class="tag">discovery — everywhere else</span></h2>
-        <p class="desc">Your most productive single blocks that <b>aren't</b> on the hot spot list — candidates to add to the route. Hover a row for its hearing-outcome breakdown.</p>
+        <h2>Best Single Blocks <span class="tag">every block, individually</span></h2>
+        <p class="desc">Every single block ranked on its own — including ones that are also part of a Hot Spot's combined range, so you can see which specific block is actually driving that spot's numbers. Hover a row for its hearing-outcome breakdown.</p>
         <div id="stats-otherblocks"></div>
       </div>
     </div>
@@ -610,10 +609,10 @@
       <input type="text" id="cfg-pubid">
     </div>
     <div class="field">
-      <label>Sheet tab GIDs (ATNYC / AT / MBT / Requested / Paid)</label>
+      <label>Sheet tab GIDs (ATNYC / AT / Alt / Requested / Paid)</label>
       <input type="text" id="cfg-gid-atnyc" placeholder="ATNYC gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-at" placeholder="AT gid" style="margin-bottom:6px;">
-      <input type="text" id="cfg-gid-mbt" placeholder="MBT gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-mbt" placeholder="Alt gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-requested" placeholder="Requested gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-paid" placeholder="Paid gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-disqreasons" placeholder="Disqualification Reasons gid">
@@ -630,7 +629,7 @@
         <input type="text" id="cfg-atnyc-name" placeholder="Vendor name" style="margin-bottom:6px;">
         <input type="text" id="cfg-atnyc-address" placeholder="Mailing address">
       </div>
-      <div class="vendor-block"><b>MBT</b>
+      <div class="vendor-block"><b>Alt</b>
         <input type="text" id="cfg-mbt-code" placeholder="Vendor code" style="margin-bottom:6px;">
         <input type="text" id="cfg-mbt-name" placeholder="Vendor name" style="margin-bottom:6px;">
         <input type="text" id="cfg-mbt-address" placeholder="Mailing address">
@@ -665,7 +664,7 @@
     <h3>How This App Works <span class="close-x" data-close="rules-overlay">✕</span></h3>
 
     <h4>Where the data comes from</h4>
-    <p>One published Google Sheet holds five tabs: <b>ATNYC</b>, <b>AT</b>, and <b>MBT</b> (per-identity master logs of filed complaints), plus shared <b>Requested</b> and <b>Paid</b> tabs that both carry a <code>Dataset</code> column (spelled inconsistently across tabs — "ATNYC" vs "AT NYC" — so this app normalizes spacing/case before matching).</p>
+    <p>One published Google Sheet holds five tabs: <b>ATNYC</b>, <b>AT</b>, and <b>Alt</b> (per-identity master logs of filed complaints), plus shared <b>Requested</b> and <b>Paid</b> tabs that both carry a <code>Dataset</code> column (spelled inconsistently across tabs — "ATNYC" vs "AT NYC" — so this app normalizes spacing/case before matching).</p>
 
     <h4>Why the app still enriches live from NYC, even though the sheet already has some OATH fields</h4>
     <ul>
@@ -1542,8 +1541,22 @@ function fmtDateMDY(d){ return `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear
 /* ============================== DATA MODEL ============================== */
 let appData = { merged: [], lastRefresh: null, changeLog: [], lastDiffCount: 0 };
 
+// DATASET_LABELS is an internal matching identifier — it MUST stay "MBT" because rec.dataset
+// gets set to this value and is compared (via normalizeDS) against the actual "Dataset" column
+// text in the Requested/Paid sheets, which will always literally say "MBT". Renaming it here
+// would silently break every Requested/Paid match for that identity. DATASET_DISPLAY is the
+// cosmetic-only label actually shown to the user — this is the one to rename.
 const DATASET_LABELS = { atnyc:'AT NYC', at:'AT', mbt:'MBT' };
+const DATASET_DISPLAY = { atnyc:'AT NYC', at:'AT', mbt:'Alt' };
 const DATASET_KEYS = { ATNYC:'atnyc', AT:'at', MBT:'mbt' }; // normalizeDS(label) -> config key
+
+// Shared dataset-badge markup — CSS class comes from the internal matching value (so styling
+// stays tied to the real identity), but the shown text is always the cosmetic DISPLAY label.
+function datasetBadge(dsValue){
+  const key = Object.keys(DATASET_LABELS).find(k => normalizeDS(DATASET_LABELS[k]) === normalizeDS(dsValue));
+  const shown = key ? DATASET_DISPLAY[key] : dsValue;
+  return `<span class="badge dataset-${normalizeDS(dsValue).toLowerCase()}">${esc(shown)}</span>`;
+}
 
 function fieldPick(row, ...keys){
   for(const k of keys){
@@ -2085,7 +2098,7 @@ const HOME_COLUMNS = [
       return d ? `<span title="From ${esc(r.clipFrom)||'(submission date)'}${r.clipTo?' · To '+esc(r.clipTo):''}">${d.toLocaleDateString()} ${d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</span>` : '—';
     } },
   { k:'complaintNumber', label:'Complaint #',      extra:false, render:r => complaintCell(r) },
-  { k:'dataset',         label:'Dataset',          extra:false, render:r => `<span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span>` },
+  { k:'dataset',         label:'Dataset',          extra:false, render:r => datasetBadge(r.dataset) },
   { k:'summons',         label:'Summons #',        extra:false, render:r => esc(r.summons)||'—' },
   { k:'company',         label:'Company',          extra:false, render:r => {
       const c = r.company || '';
@@ -2272,7 +2285,7 @@ function renderHomeStats(){
     <div class="stat-card"><div class="label">Pending Amount</div><div class="value orange">${money(pendingAmount)}</div><div class="sub">${requestedRows.length} requested, not yet received</div></div>
     <div class="stat-card"><div class="label">Paid + Pending</div><div class="value blue">${money(paidPlusPending)}</div><div class="sub">in hand or in the pipeline</div></div>
     <div class="stat-card" title="${(() => { const b = egtBreakdown(); const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×W', open:'Open ×W×T'}; return Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev)).join(' · '); })()}"><div class="label">Estimated Grand Total</div><div class="value orange">${money(estGrandTotal)}</div><div class="sub">hover for the full breakdown · ${eligibleCount.toLocaleString()} live rows</div></div>
-    <div class="stat-card"><div class="label">By Dataset</div><div class="value blue" style="font-size:.95em;">AT ${byDataset.AT} · AT NYC ${byDataset['AT NYC']} · MBT ${byDataset.MBT}</div></div>
+    <div class="stat-card"><div class="label">By Dataset</div><div class="value blue" style="font-size:.95em;">AT ${byDataset.AT} · AT NYC ${byDataset['AT NYC']} · Alt ${byDataset.MBT}</div></div>
   `;
 }
 
@@ -2286,7 +2299,7 @@ function renderNewMoney(){
   const newMoney = getNewMoneyRows();
   const tbody1 = document.querySelector('#newmoney-table tbody');
   tbody1.innerHTML = newMoney.map(r => `
-    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    <tr><td>${datasetBadge(r.dataset)}</td>
     <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
 
@@ -2315,7 +2328,7 @@ function renderNewMoney(){
         forecastCell = `<span class="est" title="Already past the current ${Math.round(curLag.days)}d lag. Revised using the ${r._forecastN} of your last 24 months' requests that also took at least ${r._daysWaiting}d (they landed around ${revisedTotalLag}d total) — and bumped forward if needed to stay no earlier than an earlier-filed request's estimate.">~${r._forecast.toLocaleDateString()}</span>`;
       }
     }
-    return `<tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    return `<tr><td>${datasetBadge(r.dataset)}</td>
       <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${esc(r.requestedDate)||'—'}</td>
       <td>${money(r._expected)}</td>
       <td>${r._daysWaiting>=0 ? r._daysWaiting : '—'}</td>
@@ -2338,10 +2351,11 @@ function buildExportGroups(){
   const eligible = appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFullExact(r));
   const groups = [];
   for(const dsKey of ['atnyc','at','mbt']){
-    const label = DATASET_LABELS[dsKey];
+    const label = DATASET_LABELS[dsKey]; // matching value — must stay the real sheet identity
+    const displayLabel = DATASET_DISPLAY[dsKey]; // what's actually shown to the user
     const list = eligible.filter(r => normalizeDS(r.dataset) === normalizeDS(label));
     for(let i=0; i<list.length; i+=8){
-      groups.push({ dsKey, label, rows: list.slice(i, i+8) });
+      groups.push({ dsKey, label, displayLabel, rows: list.slice(i, i+8) });
     }
   }
   groups.forEach((g, idx) => g.number = idx + 1);
@@ -2374,7 +2388,7 @@ function renderExportModal(){
     const suffix = multi ? ` - #${g.number}` : '';
     const sheetData = g.rows.map(r => `${r.summons}\t${dateStr}${suffix}`).join('\n');
     return `<div class="export-group">
-      <b>Group ${g.number} — ${esc(g.label)} <span class="tag" style="font-weight:600; font-size:.7em; background:var(--panel2); padding:2px 8px; border-radius:12px; color:var(--dim);">${g.rows.length} summons${g.rows.length===1?'':'es'}</span></b>
+      <b>Group ${g.number} — ${esc(g.displayLabel)} <span class="tag" style="font-weight:600; font-size:.7em; background:var(--panel2); padding:2px 8px; border-radius:12px; color:var(--dim);">${g.rows.length} summons${g.rows.length===1?'':'es'}</span></b>
       ${copyBlockHTML('Email Subject', subject, `exp-subj-${g.number}`)}
       ${copyBlockHTML('Email Body', emailBody, `exp-body-${g.number}`)}
       ${copyBlockHTML('Gmail Search String', gmailSearch, `exp-gmail-${g.number}`)}
@@ -2401,7 +2415,7 @@ function renderDiscrepancies(){
   );
   document.getElementById('disc-count').textContent = flagged.length + ' flagged';
   document.querySelector('#disc-table tbody').innerHTML = flagged.map(r => `
-    <tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    <tr><td>${datasetBadge(r.dataset)}</td>
     <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td>
     <td>${esc(r.hearingStatus)||'—'}</td><td>${esc(r.complianceStatus)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="6" class="empty">Nothing to reconcile — clean.</td></tr>`;
@@ -2415,7 +2429,7 @@ function renderTimestampAnomalies(){
     const r = x.rec;
     const days = Math.floor(x.impliedMin/1440), hrs = Math.floor((x.impliedMin%1440)/60), mins = Math.round(x.impliedMin%60);
     const durStr = (days?days+'d ':'') + (hrs?hrs+'h ':'') + mins+'m';
-    return `<tr><td><span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span></td>
+    return `<tr><td>${datasetBadge(r.dataset)}</td>
       <td>${esc(r.summons)||'—'}</td><td>${complaintCell(r)}</td>
       <td>${x.from.toLocaleString()}</td><td>${esc(r.clipTo)}</td><td>${durStr}</td></tr>`;
   }).join('') || `<tr><td colspan="6" class="empty">No timestamp anomalies found — clean.</td></tr>`;
@@ -2899,7 +2913,7 @@ function renderCalendar(){
         return `<div class="chg-item">
           <div class="when">${e.from.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}${(e.to>e.from)?'–'+e.to.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):''}</div>
           <div class="what">
-            <span class="badge dataset-${normalizeDS(r.dataset).toLowerCase()}">${esc(r.dataset)}</span>
+            ${datasetBadge(r.dataset)}
             <span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>
             ${r.offense>1?`<span class="badge disq">${r.offense===2?'2nd':'3rd'} offense</span>`:''}
             <b>${esc(r.summons || ('Complaint ' + r.complaintNumber))}</b> · ${esc(r.company)}
@@ -3044,7 +3058,7 @@ function renderStats(){
   };
   document.getElementById('stats-funnel').innerHTML =
     funnelRow('All Identities', all) +
-    ['AT','AT NYC','MBT'].map(ds => funnelRow(ds, all.filter(r => normalizeDS(r.dataset)===normalizeDS(ds)))).join('');
+    [['AT','AT'],['AT NYC','AT NYC'],['MBT','Alt']].map(([match,label]) => funnelRow(label, all.filter(r => normalizeDS(r.dataset)===normalizeDS(match)))).join('');
 
   /* --- Hearings scoreboard: lifetime live snapshot --- */
   // "Probably will never pay" reuses the grand formula's own survival curve rather than a
@@ -3250,8 +3264,27 @@ function renderStats(){
     owedKeys.map(k => hbar(k, owed[k].v, owedMax, `${money(owed[k].v)} (${owed[k].n} open)`, 'var(--orange2)')).join('') ||
     '<div class="empty">Nobody owes you anything right now. Suspicious.</div>';
 
-  /* --- Hot spots vs. everywhere else --- */
-  const blockAgg = {}; // label -> {n, est, rec, days:Set, hot, violation, dismissed, admit, defaulted, regularPaid, resolved, disqOrDismissed}
+  /* --- Hot spots, and every single block on its own (Best Single Blocks now includes blocks
+     that are ALSO part of a Hot Spot's merged range — it shows which specific block is driving
+     a hot spot's numbers, not just the combined total) --- */
+  const newBlockAgg = hot => ({n:0, est:0, rec:0, days:new Set(), hot:!!hot,
+    violation:0, dismissed:0, admit:0, defaulted:0, regularPaid:0, resolved:0, disqOrDismissed:0});
+  const tallyBlock = (agg, r, dayK) => {
+    agg.n++; agg.est += expectedPayoutFor(r); agg.rec += receivedFor(r);
+    if(dayK) agg.days.add(dayK);
+    const outcome = hearingOutcome(r);
+    if(outcome === 'violation') agg.violation++;
+    else if(outcome === 'dismissed') agg.dismissed++;
+    if(paidTicketOutright(r)) agg.admit++;
+    if(r._rowType === 'paid' || r._rowType === 'requested'){
+      agg.resolved++;
+      if(wasDefaultJudgment(r)) agg.defaulted++; else agg.regularPaid++;
+    } else if(r._rowType === 'disqualified' || r._rowType === 'dismissed'){
+      agg.resolved++; agg.disqOrDismissed++;
+    }
+  };
+  const blockAgg = {}; // label -> agg, keyed by hot-spot label when applicable (for Hot Spots)
+  const singleBlockAgg = {}; // ALWAYS keyed by the row's own single-block label (for Best Single Blocks)
   let parsed = 0, unparsed = 0, hotN = 0;
   const hotDays = new Set(), allDays = new Set();
   all.forEach(r => {
@@ -3263,20 +3296,13 @@ function renderStats(){
     if(!r._block && !r._hotBlock){ unparsed++; return; }
     parsed++;
     const label = r._hotBlock || blockLabel(r._block);
-    const agg = (blockAgg[label] = blockAgg[label] || {n:0, est:0, rec:0, days:new Set(), hot:!!r._hotBlock,
-      violation:0, dismissed:0, admit:0, defaulted:0, regularPaid:0, resolved:0, disqOrDismissed:0});
-    agg.n++; agg.est += expectedPayoutFor(r); agg.rec += receivedFor(r);
-    if(dayK) agg.days.add(dayK);
+    const agg = (blockAgg[label] = blockAgg[label] || newBlockAgg(!!r._hotBlock));
+    tallyBlock(agg, r, dayK);
     if(r._hotBlock){ hotN++; if(dayK) hotDays.add(dayK); }
-    const outcome = hearingOutcome(r);
-    if(outcome === 'violation') agg.violation++;
-    else if(outcome === 'dismissed') agg.dismissed++;
-    if(paidTicketOutright(r)) agg.admit++;
-    if(r._rowType === 'paid' || r._rowType === 'requested'){
-      agg.resolved++;
-      if(wasDefaultJudgment(r)) agg.defaulted++; else agg.regularPaid++;
-    } else if(r._rowType === 'disqualified' || r._rowType === 'dismissed'){
-      agg.resolved++; agg.disqOrDismissed++;
+    if(r._block){ // named-street hot spots (Bushwick) have no single-block identity at all
+      const singleLabel = blockLabel(r._block);
+      const sAgg = (singleBlockAgg[singleLabel] = singleBlockAgg[singleLabel] || newBlockAgg(false));
+      tallyBlock(sAgg, r, dayK);
     }
   });
   const blockBreakdownTitle = agg => {
@@ -3288,9 +3314,9 @@ function renderStats(){
       `Disqualified/dismissed of reviewed: ${disqPct} (${agg.disqOrDismissed}/${agg.resolved})`;
   };
   const hotList = Object.keys(blockAgg).filter(k=>blockAgg[k].hot).sort((a,b)=>blockAgg[b].n-blockAgg[a].n);
-  const otherList = Object.keys(blockAgg).filter(k=>!blockAgg[k].hot).sort((a,b)=>blockAgg[b].n-blockAgg[a].n).slice(0,10);
+  const otherList = Object.keys(singleBlockAgg).sort((a,b)=>singleBlockAgg[b].n-singleBlockAgg[a].n).slice(0,10);
   const hotMax = Math.max(1, ...hotList.map(k=>blockAgg[k].n));
-  const othMax = Math.max(1, ...otherList.map(k=>blockAgg[k].n));
+  const othMax = Math.max(1, ...otherList.map(k=>singleBlockAgg[k].n));
   document.getElementById('stats-hotblocks-tag').textContent =
     parsed ? `${hotN.toLocaleString()} of ${parsed.toLocaleString()} located filings (${(hotN/parsed*100).toFixed(1)}%) · ${hotDays.size} of ${allDays.size} days` : '';
   document.getElementById('stats-hotblocks').innerHTML =
@@ -3299,9 +3325,9 @@ function renderStats(){
      '<div class="empty">No filings matched the hot spot list.</div>') +
     (unparsed ? `<p class="note">${unparsed.toLocaleString()} filings had addresses this couldn't resolve to a block (non-Manhattan grids, unusual formats) and are excluded from both panels.</p>` : '');
   document.getElementById('stats-otherblocks').innerHTML =
-    otherList.map(k => hbar(k, blockAgg[k].n, othMax,
-      `${blockAgg[k].n} · ${blockAgg[k].days.size} days · est ${moneyShort(blockAgg[k].est)}`, 'var(--blue)', blockBreakdownTitle(blockAgg[k]))).join('') ||
-    '<div class="empty">No other blocks parsed yet.</div>';
+    otherList.map(k => hbar(k, singleBlockAgg[k].n, othMax,
+      `${singleBlockAgg[k].n} · ${singleBlockAgg[k].days.size} days · est ${moneyShort(singleBlockAgg[k].est)}`, 'var(--blue)', blockBreakdownTitle(singleBlockAgg[k]))).join('') ||
+    '<div class="empty">No blocks parsed yet.</div>';
 
   /* --- Time to payment: incident -> payment received --- */
   const paidDurations = all.filter(r => r._rowType === 'paid').map(r => {
@@ -3462,26 +3488,28 @@ function goToTab(name){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
-/* Market share: complaint numbers are issued sequentially citywide, so the highest number
-   seen minus the number in play at Jan 1 approximates every CACP filing made this year. */
+/* Market share: complaint numbers are "YYYY-NNNNN" (e.g. 2026-008145 = year 2026, sequence
+   8145), issued sequentially citywide — but the sequence's digit-width varies by year (2022
+   used 5 digits, 2025/2026 use 6), so the year and sequence are extracted as separate regex
+   groups rather than assumed-fixed-width digit concatenation. Citywide volume = the latest
+   sequence number itself, assuming the year's numbering starts at 1 — NOT the gap between my
+   own first and latest filings of the year, which undercounts everything anyone else filed
+   before my own first filing landed. */
 function marketShare(){
   const year = new Date().getFullYear();
-  const nums = [];
-  let mine = 0, minThisYear = Infinity, maxThisYear = 0;
+  let mine = 0, maxThisYear = 0;
   for(const r of appData.merged){
-    const n = parseInt(String(r.complaintNumber||'').replace(/\D/g,''), 10);
+    const m = String(r.complaintNumber||'').match(/^(\d{4})-(\d+)$/);
+    if(!m) continue;
+    const cnYear = +m[1], seq = +m[2];
     const d = incidentDateOf(r) || parseDate(r.dateSubmitted);
-    if(!isFinite(n) || !n || !d) continue;
-    nums.push(n);
-    if(d.getFullYear() === year){
-      mine++;
-      if(n < minThisYear) minThisYear = n;
-      if(n > maxThisYear) maxThisYear = n;
-    }
+    if(!seq || !d || cnYear !== year || d.getFullYear() !== year) continue;
+    mine++;
+    if(seq > maxThisYear) maxThisYear = seq;
   }
-  if(!mine || !isFinite(minThisYear) || maxThisYear <= minThisYear) return null;
-  const citywide = maxThisYear - minThisYear; // filings by everyone in the same window
-  if(citywide < mine) return null;
+  if(!mine || !maxThisYear) return null;
+  const citywide = maxThisYear; // sequence assumed to start at 1 for the year
+  if(citywide < mine || citywide <= 0) return null;
   return { mine, citywide, pct: mine / citywide * 100, latest: maxThisYear };
 }
 
@@ -3593,13 +3621,14 @@ function renderDashboard(){
     </div>`;
   }).join('') || '<div class="empty">No activity recorded yet.</div>';
 
-  // ---- 8-week filing pace sparkline ----
+  // ---- 8-week filing pace: total SUBMISSIONS that occurred in each week (submission date,
+  // not incident date — this one's specifically about filing activity, not violations). ----
   const weeks = [];
   for(let i=7;i>=0;i--){
     const end = new Date(); end.setDate(end.getDate() - i*7); end.setHours(23,59,59,999);
     const start = new Date(end); start.setDate(start.getDate()-6); start.setHours(0,0,0,0);
     let n = 0;
-    for(const r of all){ const d = incidentDateOf(r); if(d && d >= start && d <= end) n++; }
+    for(const r of all){ const d = parseDate(r.dateSubmitted); if(d && d >= start && d <= end) n++; }
     weeks.push({ label: (start.getMonth()+1)+'/'+start.getDate(), value: n });
   }
   document.getElementById('dash-spark').innerHTML = weeks.some(w=>w.value)
@@ -3670,7 +3699,7 @@ function renderChanges(){
       <div class="when">${new Date(c.ts).toLocaleString()}</div>
       <div class="what">
         <span class="badge chg-${c.type}">${CHANGE_LABELS[c.type]||c.type}</span>
-        <span class="badge dataset-${normalizeDS(c.dataset).toLowerCase()}">${esc(c.dataset)}</span>
+        ${datasetBadge(c.dataset)}
         <b>${esc(c.summons)}</b> · ${esc(c.company)}
         ${c.type==='new'
           ? `<div class="delta">Newly appeared in the sheet.</div>`
