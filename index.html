@@ -1079,18 +1079,35 @@ function parseDate(str){
   if(!str) return null;
   const cleaned = String(str).trim().replace(/\s*-\s*#?\d+\s*$/,'').trim();
   if(!cleaned) return null;
-  if(/\d{4}/.test(cleaned)){
-    const d = new Date(cleaned);
-    if(!isNaN(d.getTime())) return d;
-  }
-  const m = cleaned.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:[, ]+(\d{1,2}):(\d{2}))?/);
-  if(m){
-    let [_, mo, da, yr, hh, mi] = m;
+  // Parse the two formats actually present in this data by hand — M/D/YYYY (year optional,
+  // defaults to 2023 for old no-year entries) and ISO YYYY-MM-DD — each optionally followed
+  // by a time and AM/PM. Native new Date() parses these leniently on Chrome, but Safari/
+  // WebKit is stricter about the comma-separated "date, H:MM:SS AM" hybrid that Google Sheets
+  // exports for datetime columns and silently returns Invalid Date there — which zeroed out
+  // every requested/paid conversion-date pair on iOS and collapsed the survival model's warp
+  // to its no-data fallback (×1.00, then the harsh flat T(age) curve instead of the real
+  // time-warped tail). Don't rely on the native parser's cross-browser leniency for formats
+  // we already know the shape of.
+  const mdy = cleaned.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:[, T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?/);
+  if(mdy){
+    let [_, mo, da, yr, hh, mi, ss, ap] = mdy;
     if(!yr) yr = '2023'; // no-year entries line up with each identity's earliest 2023 request batches
     else if(yr.length === 2) yr = '20'+yr;
-    const d = new Date(+yr, +mo-1, +da, +(hh||0), +(mi||0));
+    hh = hh?+hh:0; mi = mi?+mi:0; ss = ss?+ss:0;
+    if(ap){ const isPM = /pm/i.test(ap); if(isPM && hh<12) hh+=12; if(!isPM && hh===12) hh=0; }
+    const d = new Date(+yr, +mo-1, +da, hh, mi, ss);
     if(!isNaN(d.getTime())) return d;
   }
+  const iso = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[, T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?/);
+  if(iso){
+    let [_, yr, mo, da, hh, mi, ss, ap] = iso;
+    hh = hh?+hh:0; mi = mi?+mi:0; ss = ss?+ss:0;
+    if(ap){ const isPM = /pm/i.test(ap); if(isPM && hh<12) hh+=12; if(!isPM && hh===12) hh=0; }
+    const d = new Date(+yr, +mo-1, +da, hh, mi, ss);
+    if(!isNaN(d.getTime())) return d;
+  }
+  const d = new Date(cleaned);
+  if(!isNaN(d.getTime())) return d;
   return null;
 }
 function money(n){
