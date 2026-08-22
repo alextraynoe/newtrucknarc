@@ -1807,6 +1807,21 @@ function diffAgainstPrevious(merged){
       changes.push(Object.assign({type:'hearing_status', before: old.hearingStatus||'—', after: rec.hearingStatus||'—'}, base));
     if((old.hearingResult||'') !== (rec.hearingResult||''))
       changes.push(Object.assign({type:'hearing_result', before: old.hearingResult||'—', after: rec.hearingResult||'—'}, base));
+    // A confirmed nonzero paidAmount reverting to 0 is almost always a transient miss — the
+    // sheet's own "Paid Amount" column read blank mid-edit by whatever external process
+    // populates it, or this row's enrichFromNYC batch hit a network hiccup and silently fell
+    // through to the (blank) sheet value — not a real DEP reversal. Confirmed 8/22/2026 via
+    // summons 000971783P: the Changes tab logged "$350.00 → $0.00", but a live query against
+    // jz4z-kudi for that exact ticket showed paid_amount "350", hearing_status "PAID IN FULL",
+    // compliance_status "All Terms Met" — nothing on NYC's end had changed. Genuine reversals
+    // (refunds, vacated judgments) would also flip hearingStatus/complianceStatus, which this
+    // guard doesn't touch, so a real one still surfaces via those change types. Carry the old
+    // value forward instead of logging a false regression and quietly undercounting the row
+    // in the EGT until the next successful refresh.
+    if(!rec.paidAmount && old.paidAmount){
+      rec.paidAmount = old.paidAmount;
+      rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    }
     if((old.paidAmount||0) !== (rec.paidAmount||0))
       changes.push(Object.assign({type:'payment_amount', before: money(old.paidAmount||0), after: money(rec.paidAmount||0)}, base));
   }
