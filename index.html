@@ -2007,11 +2007,19 @@ function parsePortalDetail(html){
 }
 async function fetchPortalDetail(summons){
   const url = `https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=${encodeURIComponent(summons)}&searchViolationObject.searchType=violationNumber`;
+  // No "direct" attempt — confirmed via curl this endpoint sets no CORS headers at all, so a
+  // direct browser fetch can never succeed; trying it first would only waste a round trip.
+  // Order and timeout here are NOT the same as fetchCSV's — timed all three proxies live
+  // against this specific endpoint (8/22/2026) and codetabs/allorigins are currently both
+  // broken for it (522 / 408, ~9-20s to fail), while corsproxy.io answers in ~0.2s. Trying
+  // codetabs first (fetchCSV's order) meant every single row burned most of its budget
+  // waiting out a dead proxy before ever reaching the one that works — that was the real
+  // reason a full pass took 10+ minutes, not the per-request work itself. corsproxy.io goes
+  // first here; the other two stay as a safety net in case it has an outage of its own.
   const attempts = [
-    () => fetchWithTimeout(url, 9000),
-    () => fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), 9000),
-    () => fetchWithTimeout('https://corsproxy.io/?url=' + encodeURIComponent(url), 9000),
-    () => fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 9000)
+    () => fetchWithTimeout('https://corsproxy.io/?url=' + encodeURIComponent(url), 6000),
+    () => fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), 6000),
+    () => fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 6000)
   ];
   for(const attempt of attempts){
     try{
@@ -2076,7 +2084,14 @@ async function runReallyGoodRefresh(){
           // awaited, not fire-and-forget — if the tab closes right after this fix is found,
           // the write must have actually landed in IndexedDB already, not just been kicked off
           await persistCache();
-          renderChanges();
+          // renderAll(), not just renderChanges() — a fix here changes hearingStatus, which
+          // New Money, the Home dashboard totals, and Data table row coloring all depend on.
+          // Confirmed 8/22/2026: rendering only Changes meant a row (e.g. Andres Trucking LLC)
+          // showed up correctly in the Changes log the instant it was fixed, but New Money
+          // kept showing stale content until the whole run finished and finally called
+          // renderAll() — everything should stay visibly in sync as each fix lands, not just
+          // the one tab.
+          renderAll();
         }
       }
       done++;
