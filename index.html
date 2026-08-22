@@ -311,6 +311,7 @@
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
     <button class="tab-btn" data-tab="changes">Changes<span class="pip" id="changes-pip" style="display:none;">0</span></button>
+    <button class="tab-btn" data-tab="map">Map</button>
   </div>
 
   <!-- DASHBOARD (new home) -->
@@ -598,6 +599,16 @@
     </div>
   </section>
 
+  <section class="tab-content" id="tab-map">
+    <div class="panel">
+      <h2>Map <span class="tag">Google My Maps</span></h2>
+      <p class="desc">Embedded from your My Maps map. Edit the map itself directly on
+        <a href="https://www.google.com/maps/d/edit" target="_blank" rel="noopener">google.com/maps/d</a> —
+        changes there show up here on next load. Change which map is embedded in Settings.</p>
+      <iframe id="map-embed" src="" width="100%" height="700" style="border:0; border-radius:9px;" loading="lazy"></iframe>
+    </div>
+  </section>
+
 </div>
 
 <!-- SETTINGS MODAL -->
@@ -616,6 +627,10 @@
       <input type="text" id="cfg-gid-requested" placeholder="Requested gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-paid" placeholder="Paid gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-disqreasons" placeholder="Disqualification Reasons gid">
+    </div>
+    <div class="field">
+      <label>Map tab — Google My Maps ID (the mid= value from your map's URL)</label>
+      <input type="text" id="cfg-map-mid" placeholder="e.g. 1cy7y1egAwu9Bvmc3oKnuwxLK78BUCRI">
     </div>
     <div class="field">
       <label>Vendor info per identity (used by Export for Email; kept locally)</label>
@@ -745,6 +760,7 @@ const DEFAULTS = {
     atnyc: { code:'VS00083313', name:'Alexander Traynor',       address:'374 Monaco Ln, Glastonbury, CT 06033' },
     mbt:   { code:'VS00099981', name:'Mary Beth Brown-Traynor', address:'97 Ledgewood Dr, Glastonbury, CT 06033' }
   },
+  mapMid: '1cy7y1egAwu9Bvmc3oKnuwxLK78BUCRI', // Google My Maps map ID embedded on the Map tab
   enrich: 'on'
 };
 const LS_CFG = 'truckNarcSettings';
@@ -768,6 +784,7 @@ function loadConfig(){
         atnyc: Object.assign({}, DEFAULTS.vendors.atnyc, (saved.vendors||{}).atnyc || {}),
         mbt:   Object.assign({}, DEFAULTS.vendors.mbt,   (saved.vendors||{}).mbt   || {})
       },
+      mapMid: saved.mapMid || DEFAULTS.mapMid,
       enrich: saved.enrich || DEFAULTS.enrich
     };
   }catch(e){ return JSON.parse(JSON.stringify(DEFAULTS)); }
@@ -3534,6 +3551,12 @@ function goToTab(name){
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
+// Static (not data-driven) — the Map tab just embeds the configured Google My Maps map,
+// so this only needs to run once at boot and again whenever the mid changes in Settings.
+function renderMapEmbed(){
+  document.getElementById('map-embed').src = 'https://www.google.com/maps/d/embed?mid=' + encodeURIComponent(CFG.mapMid);
+}
+
 /* Market share: complaint numbers are "YYYY-NNNNN" (e.g. 2026-008145 = year 2026, sequence
    8145), issued sequentially citywide — but the sequence's digit-width varies by year (2022
    used 5 digits, 2025/2026 use 6), so the year and sequence are extracted as separate regex
@@ -3828,6 +3851,7 @@ document.getElementById('btn-settings').addEventListener('click', ()=>{
   document.getElementById('cfg-gid-requested').value = CFG.gids.requested;
   document.getElementById('cfg-gid-paid').value = CFG.gids.paid;
   document.getElementById('cfg-gid-disqreasons').value = CFG.gids.disqreasons;
+  document.getElementById('cfg-map-mid').value = CFG.mapMid;
   for(const k of ['at','atnyc','mbt']){
     document.getElementById(`cfg-${k}-code`).value = CFG.vendors[k].code;
     document.getElementById(`cfg-${k}-name`).value = CFG.vendors[k].name;
@@ -3856,10 +3880,12 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
       disqreasons: document.getElementById('cfg-gid-disqreasons').value.trim()
     },
     vendors,
+    mapMid: document.getElementById('cfg-map-mid').value.trim() || DEFAULTS.mapMid,
     enrich: document.getElementById('cfg-enrich').value
   };
   saveConfig(CFG);
   closeModal('settings-overlay');
+  renderMapEmbed();
   loadAllData(false);
 });
 document.getElementById('btn-refresh').addEventListener('click', () => { loadAllData(false); });
@@ -3881,6 +3907,7 @@ if(isFileProtocol){
 
 (async function boot(){
   try{ localStorage.removeItem('truckNarcPriors'); }catch(e){} // leftover from the removed citywide-priors feature
+  renderMapEmbed();
   await loadCache();
   if(appData.merged.length){
     setStatus('Showing cached data — refreshing in background…', true);
