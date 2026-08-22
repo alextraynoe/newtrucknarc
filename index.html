@@ -1763,6 +1763,7 @@ async function loadAllData(silent){
 
   if(CFG.enrich !== 'off'){
     await enrichFromNYC(merged);
+    carryForwardFailedEnrichment(merged);
     // re-classify after enrichment in case hearing_result changed to/from "dismissed",
     // and re-derive offense tiers now that real dollar amounts are in
     for(const rec of merged){ classifyRow(rec); rec.offense = offenseFor(rec); }
@@ -1892,6 +1893,7 @@ async function enrichFromNYCBatch(batch){
     if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
     if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
     rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    rec._liveConfirmed = true; // this row's fields came from an actual NYC check this refresh, not just the sheet's raw column
   }
 }
 async function enrichFromNYC(records){
@@ -1914,10 +1916,42 @@ async function enrichFromNYC(records){
       }catch(e2){
         console.warn('NYC enrichment batch failed twice (continuing with sheet data)', e2);
         enrichStaleCount += batch.length;
+        for(const rec of batch) rec._enrichFailed = true;
       }
     }
   }
   if(enrichStaleCount) console.warn('[enrich]', enrichStaleCount, 'of', withSummons.length, 'rows kept stale sheet data this refresh (NYC batch fetch failed twice)');
+}
+// When a row's batch failed enrichment entirely this refresh, `merged` currently holds
+// whatever the SHEET's own raw hearing_status/paid_amount column says — which can be far
+// staler than what live NYC already confirmed on a PAST successful refresh (the sheet's own
+// copy is populated by a separate, slower process). Falling back to it silently un-does a
+// real, already-confirmed fact. Confirmed 8/22/2026: summons 000922319K was correctly caught
+// as paid on one refresh (live enrichment succeeded), then reverted to the sheet's stale
+// "DEFAULTED" on a later refresh when that row's batch failed — exactly the "found it once,
+// gone next time" pattern. Carry forward the last successfully-known fields instead — but
+// ONLY when the old value was itself a confirmed live NYC check (`_liveConfirmed`), never
+// just leftover raw sheet data. A genuine sheet-level edit (the user's own tracking process
+// updating that column) must still win over an older, never-verified sheet snapshot.
+function carryForwardFailedEnrichment(merged){
+  const prev = appData.merged || [];
+  if(!prev.length) return;
+  const prevMap = new Map(prev.map(r => [diffKey(r), r]));
+  for(const rec of merged){
+    if(!rec._enrichFailed) continue;
+    const old = prevMap.get(diffKey(rec));
+    delete rec._enrichFailed;
+    if(!old || !old._liveConfirmed) continue;
+    rec._liveConfirmed = true;
+    rec.hearingStatus = old.hearingStatus;
+    rec.hearingResult = old.hearingResult;
+    rec.complianceStatus = old.complianceStatus;
+    rec.paidAmount = old.paidAmount;
+    rec.violationAmount = old.violationAmount;
+    rec.penaltyImposed = old.penaltyImposed;
+    rec.balanceDue = old.balanceDue;
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+  }
 }
 
 /* IndexedDB key-value store: the real fix for the storage-trim problem. localStorage caps at
