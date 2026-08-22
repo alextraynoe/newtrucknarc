@@ -40,7 +40,11 @@
   }
   .icon-btn:hover{background:rgba(255,255,255,.38);}
 
-  .status-line{font-size:.75em; color:var(--dim2); margin:-4px 0 12px 2px; display:flex; gap:14px; flex-wrap:wrap;}
+  .status-line{font-size:.75em; color:var(--dim2); margin:-4px 0 12px 2px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;}
+  .rgr-bar-wrap{display:none; align-items:center; gap:6px;}
+  .rgr-bar-wrap.active{display:flex;}
+  .rgr-bar{width:110px; height:6px; background:var(--panel2); border:1px solid var(--border); border-radius:3px; overflow:hidden;}
+  .rgr-bar-fill{height:100%; background:var(--blue); width:0%; transition:width .15s;}
 
   .tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
   .tab-btn{
@@ -302,6 +306,11 @@
   <div class="status-line" id="status-line" style="align-items:center;">
     <span id="status-text">Loading cached data…</span>
     <button class="btn ghost" id="btn-refresh" style="padding:3px 10px; font-size:.95em;">↻ Refresh</button>
+    <button class="btn ghost" id="btn-really-good-refresh" style="padding:3px 10px; font-size:.95em;" title="Live-checks every row NYC has already reviewed but hasn't paid yet (defaulted, or a past hearing date) against the real-time ECB ticket portal instead of the bulk dataset (which can sit wrong for years), and fixes any that are actually already paid.">⚡ Really Good Refresh</button>
+    <span class="rgr-bar-wrap" id="rgr-bar-wrap">
+      <span class="rgr-bar"><span class="rgr-bar-fill" id="rgr-bar-fill"></span></span>
+      <span id="rgr-bar-text">0 / 0</span>
+    </span>
   </div>
 
   <div class="tabs">
@@ -1952,6 +1961,121 @@ function carryForwardFailedEnrichment(merged){
     rec.balanceDue = old.balanceDue;
     rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
   }
+}
+
+/* ============================== "REALLY GOOD REFRESH" ============================== */
+/* Live-checks every row NYC has already reviewed (a hearing has happened) but that hasn't
+   been paid yet against the real-time ECB ticket-finder portal (a820-ecbticketfinder.nyc.gov)
+   instead of trusting the bulk jz4z-kudi dataset, which has been repeatedly confirmed to sit
+   wrong for YEARS on already-resolved tickets — not just a day behind (see CLAUDE.md,
+   8/22/2026: 000742034Z's hearing was in March 2023 and the bulk dataset still shows it
+   DEFAULTED today, while the portal shows PAID IN FULL / $0 balance). Scoped to 'defaulted'
+   rows plus 'scheduled' rows whose hearing date has already passed — not all ~2,000+
+   summons-bearing rows — since that's the reviewed-but-unresolved set the bulk dataset keeps
+   getting wrong, and the portal only supports one summons per request (no bulk mode like
+   jz4z-kudi's $where...in()) — checking everything would take far too long. Runs with bounded
+   concurrency through the same CORS-proxy
+   fallback chain fetchCSV uses, since the portal sets no CORS headers (confirmed via curl:
+   no Access-Control-Allow-Origin on either GET or POST). The endpoint is a GET-friendly
+   Struts action — `?searchViolationObject.violationNo=X&searchViolationObject.searchType=
+   violationNumber` returns the exact same detail page the "New Search" form POSTs to. */
+const PORTAL_CONCURRENCY = 8;
+function parsePortalDetail(html){
+  if(/No Record Available/i.test(html)) return null; // genuinely not found on the portal
+  const statusM = html.match(/Status of Summons\/Notice:[\s\S]{0,40}?<td>\s*([A-Z][A-Z \/]*)/i);
+  const balanceM = html.match(/Balance Due:[\s\S]{0,60}?<td>\s*([\d,.]+)/i);
+  const resultM = html.match(/Hearing Result:[\s\S]{0,40}?<td[^>]*>\s*([^<]*)<\/td>/i);
+  if(!statusM) return null; // page loaded but didn't have the "More Details" section — nothing usable
+  return {
+    status: statusM[1].trim(),
+    balanceDue: balanceM ? numFrom(balanceM[1]) : null,
+    hearingResult: resultM ? resultM[1].trim() : null
+  };
+}
+async function fetchPortalDetail(summons){
+  const url = `https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=${encodeURIComponent(summons)}&searchViolationObject.searchType=violationNumber`;
+  const attempts = [
+    () => fetchWithTimeout(url, 9000),
+    () => fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), 9000),
+    () => fetchWithTimeout('https://corsproxy.io/?url=' + encodeURIComponent(url), 9000),
+    () => fetchWithTimeout('https://api.allorigins.win/raw?url=' + encodeURIComponent(url), 9000)
+  ];
+  for(const attempt of attempts){
+    try{
+      const res = await attempt();
+      if(!res.ok) continue;
+      const text = await res.text();
+      if(text && text.trim()) return parsePortalDetail(text);
+    }catch(e){ /* try next proxy */ }
+  }
+  return undefined; // every attempt failed to even load — distinct from null ("no record")
+}
+async function runReallyGoodRefresh(){
+  const btn = document.getElementById('btn-really-good-refresh');
+  const wrap = document.getElementById('rgr-bar-wrap');
+  const fill = document.getElementById('rgr-bar-fill');
+  const text = document.getElementById('rgr-bar-text');
+  // "Reviewed but not yet paid": defaulted rows, plus 'scheduled' rows whose hearing date has
+  // already passed (categorize() lumps any row with a hearingDate into 'scheduled' regardless
+  // of whether that date is future or past — a past one means NYC already reviewed it, it just
+  // didn't land in the 'defaulted' bucket, e.g. 000862446L's "HEARING COMPLETED"). Excludes
+  // 'open' (no hearing yet — nothing to check) and 'pifUnclaimed' (already known paid). Order
+  // is shuffled each run so an interrupted or partial run (this can take 10+ minutes) still
+  // samples across the whole set over time instead of always grinding through the same prefix.
+  const now = Date.now();
+  const targets = appData.merged.filter(r => {
+    if(!r.summons) return false;
+    const cat = categorize(r);
+    if(cat === 'defaulted') return true;
+    if(cat === 'scheduled'){ const hd = parseDate(r.hearingDate); return hd && hd.getTime() < now; }
+    return false;
+  });
+  for(let i = targets.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [targets[i], targets[j]] = [targets[j], targets[i]];
+  }
+  if(!targets.length){ alert('Nothing reviewed-but-unpaid to check right now.'); return; }
+  btn.disabled = true;
+  wrap.classList.add('active');
+  let done = 0, updated = 0, failed = 0;
+  const updateProgress = () => {
+    fill.style.width = (done/targets.length*100).toFixed(0) + '%';
+    text.textContent = `${done} / ${targets.length}${updated ? ' · ' + updated + ' fixed' : ''}`;
+  };
+  updateProgress();
+  let idx = 0;
+  async function worker(){
+    while(idx < targets.length){
+      const rec = targets[idx++];
+      const detail = await fetchPortalDetail(rec.summons);
+      if(detail === undefined) failed++;
+      else if(detail && detail.status && detail.status !== rec.hearingStatus){
+        const beforeStatus = rec.hearingStatus || '—';
+        rec.hearingStatus = detail.status;
+        if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
+        if(detail.balanceDue != null) rec.balanceDue = detail.balanceDue;
+        rec._liveConfirmed = true;
+        rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+        classifyRow(rec);
+        rec.offense = offenseFor(rec);
+        updated++;
+        appData.changeLog.unshift({ ts: new Date().toISOString(), dataset: rec.dataset, summons: rec.summons, company: rec.company, type:'hearing_status', before: beforeStatus, after: rec.hearingStatus });
+      }
+      done++;
+      updateProgress();
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(PORTAL_CONCURRENCY, targets.length)}, worker));
+  appData.changeLog = appData.changeLog.slice(0, CHANGE_LOG_CAP);
+  appData.lastDiffCount = updated;
+  appData.lastRefresh = new Date().toISOString();
+  SURV = null;
+  btn.disabled = false;
+  wrap.classList.remove('active');
+  persistCache();
+  renderAll();
+  setStatus('Really Good Refresh complete', false);
+  alert(`Checked ${targets.length} reviewed-but-unpaid rows against the live NYC portal.\n${updated} were actually already resolved — totals updated.${failed ? '\n' + failed + ' could not be checked (network issue) — try again later.' : ''}`);
 }
 
 /* IndexedDB key-value store: the real fix for the storage-trim problem. localStorage caps at
@@ -3945,6 +4069,7 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
   loadAllData(false);
 });
 document.getElementById('btn-refresh').addEventListener('click', () => { loadAllData(false); });
+document.getElementById('btn-really-good-refresh').addEventListener('click', runReallyGoodRefresh);
 document.getElementById('btn-clear-cache').addEventListener('click', () => {
   localStorage.removeItem(LS_DATA);
   appData = { merged: [], lastRefresh: null, changeLog: [], lastDiffCount: 0 };
