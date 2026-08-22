@@ -1862,40 +1862,62 @@ function renderErrorBanner(){
     '<br>Check that each tab is published to the web (File → Share → Publish to web) and that the gid in Settings matches that tab, then hit Clear Cached Data to retry.';
 }
 
+// Rows whose batch never got live NYC data this refresh (kept at whatever the sheet had
+// cached), even after the retry below — tracked so a stuck-stale row like "New Money"
+// silently missing a paid-in-full ticket is explainable instead of mysterious. Reset at the
+// top of each enrichFromNYC() call.
+let enrichStaleCount = 0;
+function getEnrichStaleCount(){ return enrichStaleCount; }
+async function enrichFromNYCBatch(batch){
+  const list = batch.map(r => `'${r.summons}'`).join(',');
+  // The dataset's actual join column is "ticket_number", NOT "summons_number" — querying by
+  // summons_number throws a SOQL "no such column" error (HTTP 400). Since `if(!res.ok)
+  // continue` silently skipped the batch on any non-2xx response, live NYC enrichment has
+  // been failing on every single refresh: everything shown was just the sheet's own stale
+  // cached hearing_status/hearing_result/paid_amount, never actually re-checked against NYC.
+  // Confirmed live 8/6/2026: summons 000997229N is HTTP 400 on summons_number, but querying
+  // ticket_number='000997229N' returns real current data (hearing_status: "PAID IN FULL").
+  const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=ticket_number in (${list})&$limit=${batch.length}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const apiRows = await res.json();
+  for(const row of apiRows){
+    const rec = batch.find(r => r.summons === row.ticket_number);
+    if(!rec) continue;
+    if(row.hearing_status) rec.hearingStatus = row.hearing_status;
+    if(row.hearing_result) rec.hearingResult = row.hearing_result;
+    if(row.compliance_status) rec.complianceStatus = row.compliance_status;
+    if(row.paid_amount) rec.paidAmount = numFrom(row.paid_amount);
+    if(row.total_violation_amount) rec.violationAmount = numFrom(row.total_violation_amount);
+    if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
+    if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+  }
+}
 async function enrichFromNYC(records){
+  enrichStaleCount = 0;
   const withSummons = records.filter(r => r.summons);
   const batchSize = 50;
   for(let i=0;i<withSummons.length;i+=batchSize){
     const batch = withSummons.slice(i, i+batchSize);
-    const list = batch.map(r => `'${r.summons}'`).join(',');
-    // The dataset's actual join column is "ticket_number", NOT "summons_number" — querying by
-    // summons_number throws a SOQL "no such column" error (HTTP 400). Since `if(!res.ok)
-    // continue` silently skipped the batch on any non-2xx response, live NYC enrichment has
-    // been failing on every single refresh: everything shown was just the sheet's own stale
-    // cached hearing_status/hearing_result/paid_amount, never actually re-checked against NYC.
-    // Confirmed live 8/6/2026: summons 000997229N is HTTP 400 on summons_number, but querying
-    // ticket_number='000997229N' returns real current data (hearing_status: "PAID IN FULL").
-    const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=ticket_number in (${list})&$limit=${batchSize}`;
+    // One retry on failure — a single flaky batch (network blip, Socrata hiccup) used to
+    // silently leave up to 50 rows on stale sheet-cached status for the whole refresh, with
+    // no signal anything was wrong. Confirmed 8/22/2026: summons 000860836H sat stuck on a
+    // stale "HEARING COMPLETED" while NYC's live record already showed "PAID IN FULL" —
+    // which is exactly why "New Money" felt inconsistent refresh to refresh: it wasn't the
+    // real-world data changing, it was enrichment coverage silently varying each time.
     try{
-      const res = await fetch(url);
-      if(!res.ok) continue;
-      const apiRows = await res.json();
-      for(const row of apiRows){
-        const rec = batch.find(r => r.summons === row.ticket_number);
-        if(!rec) continue;
-        if(row.hearing_status) rec.hearingStatus = row.hearing_status;
-        if(row.hearing_result) rec.hearingResult = row.hearing_result;
-        if(row.compliance_status) rec.complianceStatus = row.compliance_status;
-        if(row.paid_amount) rec.paidAmount = numFrom(row.paid_amount);
-        if(row.total_violation_amount) rec.violationAmount = numFrom(row.total_violation_amount);
-        if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
-        if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
-        rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
-      }
+      await enrichFromNYCBatch(batch);
     }catch(e){
-      console.warn('NYC enrichment batch failed (continuing with sheet data)', e);
+      try{
+        await enrichFromNYCBatch(batch);
+      }catch(e2){
+        console.warn('NYC enrichment batch failed twice (continuing with sheet data)', e2);
+        enrichStaleCount += batch.length;
+      }
     }
   }
+  if(enrichStaleCount) console.warn('[enrich]', enrichStaleCount, 'of', withSummons.length, 'rows kept stale sheet data this refresh (NYC batch fetch failed twice)');
 }
 
 /* IndexedDB key-value store: the real fix for the storage-trim problem. localStorage caps at
