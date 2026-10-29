@@ -1778,6 +1778,10 @@ async function loadAllData(silent){
     for(const rec of merged){ classifyRow(rec); rec.offense = offenseFor(rec); }
   }
 
+  // Outside the enrich toggle on purpose — the sheet's own column can regress too.
+  const pifRestored = reconcilePIFLedger(merged, appData.merged, appData.changeLog);
+  if(pifRestored) console.log('[pif-ledger] kept', pifRestored, 'row(s) as Paid in Full that a source tried to move backwards');
+
   applyPlateHistoryTiers(merged);
 
   diffAgainstPrevious(merged);
@@ -1963,6 +1967,72 @@ function carryForwardFailedEnrichment(merged){
   }
 }
 
+/* ============================== PAID-IN-FULL LEDGER ============================== */
+/* "Paid in Full" is a one-way door — a ticket that has been paid doesn't un-pay itself — but
+   every source we read can transiently say otherwise: the bulk dataset lags or flickers, the
+   sheet's own hearing_status column is rewritten by a separate process, and a failed enrichment
+   batch falls back to whichever stale copy is left. `merged` is rebuilt from scratch on every
+   refresh, so any one of those flickers silently reverted rows to an earlier lifecycle status
+   (found 8/29/2026: 001045339M logged "PAID IN FULL → NEW ISSUANCE" — NEW ISSUANCE is how a
+   ticket *starts*, and the sheet, bulk and live portal all say PAID IN FULL again now).
+   So the first time any source shows a summons as paid in full it goes into this ledger
+   (localStorage, separate from the appData cache so "Clear Cached Data" doesn't forget it),
+   and every refresh restores it on any row a source tries to move backwards. The ledger is
+   also seeded from the previous snapshot and from the Changes log's "before: PAID IN FULL"
+   entries, which recovers rows that were already reverted before this existed. The one
+   exception: a hearing result containing DISMISS — a real reversal — isn't restored. */
+const LS_PIF_LEDGER = 'truckNarcPIFLedger';
+function isPIFText(s){ return /PAID IN FULL/i.test(String(s||'')); }
+function loadPIFLedger(){ try{ return JSON.parse(localStorage.getItem(LS_PIF_LEDGER) || '{}') || {}; }catch(e){ return {}; } }
+function savePIFLedger(ledger){ try{ localStorage.setItem(LS_PIF_LEDGER, JSON.stringify(ledger)); }catch(e){} }
+// Returns true if the ledger changed. A portal confirmation outranks any earlier entry; otherwise
+// the first sighting is kept.
+function recordPIF(ledger, rec, source, over){
+  if(!rec.summons) return false;
+  const ex = ledger[rec.summons];
+  if(ex && !(source === 'portal' && ex.source !== 'portal')) return false;
+  over = over || {};
+  const bal = over.balanceDue != null ? over.balanceDue : rec.balanceDue;
+  ledger[rec.summons] = {
+    at: new Date().toISOString(), source,
+    status: over.status || rec.hearingStatus || 'PAID IN FULL',
+    paidAmount: rec.paidAmount || 0,
+    balanceDue: bal == null ? null : bal
+  };
+  return true;
+}
+function reconcilePIFLedger(merged, prev, changeLog){
+  const ledger = loadPIFLedger();
+  let dirty = false;
+  for(const r of (prev || [])) if(isPIFText(r.hearingStatus) && recordPIF(ledger, r, 'cache')) dirty = true;
+  for(const c of (changeLog || [])){
+    if(c.type !== 'hearing_status' || !/^\d{6,}[A-Z]$/.test(c.summons || '')) continue;
+    if(isPIFText(c.before) && !ledger[c.summons]){
+      ledger[c.summons] = { at: c.ts, source: 'changelog', status: 'PAID IN FULL', paidAmount: 0, balanceDue: null };
+      dirty = true;
+    }
+  }
+  let restored = 0;
+  for(const rec of merged){
+    if(!rec.summons) continue;
+    if(isPIFText(rec.hearingStatus)){
+      if(recordPIF(ledger, rec, rec._liveConfirmed ? 'live' : 'sheet')) dirty = true;
+      continue;
+    }
+    const known = ledger[rec.summons];
+    if(!known || /DISMISS/i.test(rec.hearingResult || '')) continue;
+    rec._pifRestoredFrom = rec.hearingStatus || '(blank)';
+    rec.hearingStatus = known.status || 'PAID IN FULL';
+    if(!rec.paidAmount && known.paidAmount) rec.paidAmount = known.paidAmount;
+    if(known.balanceDue != null) rec.balanceDue = known.balanceDue;
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    classifyRow(rec); rec.offense = offenseFor(rec);
+    restored++;
+  }
+  if(dirty) savePIFLedger(ledger);
+  return restored;
+}
+
 /* ============================== "REALLY GOOD REFRESH" ============================== */
 /* Live-checks every "white" row — rowClass(rec) === '' — against the real-time ECB
    ticket-finder portal (a820-ecbticketfinder.nyc.gov) instead of trusting the bulk jz4z-kudi
@@ -2049,6 +2119,7 @@ async function runReallyGoodRefresh(){
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
 
+  const pifLedger = loadPIFLedger();
   btn.disabled = true;
   wrap.classList.add('active');
   let done = 0, updated = 0, failed = 0;
@@ -2067,7 +2138,13 @@ async function runReallyGoodRefresh(){
       } else {
         checkedSet.add(rec.summons);
         saveRGRProgress([...checkedSet]);
-        if(detail && detail.status && detail.status !== rec.hearingStatus){
+        // The portal is the strongest evidence there is: a paid-in-full confirmation goes
+        // straight into the ledger (synchronously — localStorage), and a non-paid answer never
+        // downgrades a ticket the ledger already knows is paid.
+        if(detail && detail.status && isPIFText(detail.status) &&
+           recordPIF(pifLedger, rec, 'portal', { status: detail.status, balanceDue: detail.balanceDue })) savePIFLedger(pifLedger);
+        const wouldDowngrade = detail && detail.status && pifLedger[rec.summons] && !isPIFText(detail.status);
+        if(detail && detail.status && !wouldDowngrade && detail.status !== rec.hearingStatus){
           const beforeStatus = rec.hearingStatus || '—';
           rec.hearingStatus = detail.status;
           if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
@@ -2578,7 +2655,7 @@ function renderNewMoney(){
   const newMoney = getNewMoneyRows();
   const tbody1 = document.querySelector('#newmoney-table tbody');
   tbody1.innerHTML = newMoney.map(r => `
-    <tr><td>${datasetBadge(r.dataset)}</td>
+    <tr${r._pifRestoredFrom ? ` title="${esc('A source currently reports "' + r._pifRestoredFrom + '" — kept as Paid in Full because this ticket was confirmed paid earlier.')}"` : ''}><td>${datasetBadge(r.dataset)}</td>
     <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
 
