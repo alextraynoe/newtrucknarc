@@ -43,6 +43,13 @@
   .status-line{font-size:.75em; color:var(--dim2); margin:-4px 0 12px 2px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;}
   /* Self-Pursue tab. Colors come from the shared variables / translucent tints, so it follows the
      rest of the dashboard; the board and tables scroll sideways on narrow screens. */
+  #sp-stats{grid-template-columns:repeat(7,1fr); gap:8px;}
+  #sp-stats .stat-card{padding:10px 10px;}
+  #sp-stats .stat-card .value{font-size:1.2em;}
+  #sp-stats .stat-card .label{font-size:.66em;}
+  #sp-stats .stat-card .sub{font-size:.66em;}
+  @media (max-width:1100px){ #sp-stats{grid-template-columns:repeat(4,1fr);} }
+  @media (max-width:640px){ #sp-stats{grid-template-columns:repeat(2,1fr);} }
   .sp-status{font-size:.78em; color:var(--dim); margin:0 0 12px 2px; line-height:1.6;}
   .sp-status .sp-err{color:var(--danger); font-weight:600;}
   tr.sp-changed td{background:rgba(255,193,7,.22);}
@@ -63,6 +70,8 @@
   .sp-day-card{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:10px; background:var(--panel2); font-size:.82em; line-height:1.55;}
   .sp-day-card h3{font-size:1em; margin-bottom:4px;}
   .sp-day-card .sp-k{display:inline-block; min-width:84px; color:var(--dim); font-size:.9em;}
+  .sp-evidence{font-weight:700;}
+  .sp-dim{color:var(--dim2); font-size:.92em;}
   .sp-hint{font-size:.74em; color:var(--dim2); margin:2px 0 10px;}
   .rgr-bar-wrap{display:none; align-items:center; gap:6px;}
   .rgr-bar-wrap.active{display:flex;}
@@ -3110,17 +3119,17 @@ function renderSelfPursue(){
   const gross = paidViews.reduce((s, v) => s + ((v.o && v.o.paidAmount) || 0), 0);
   const hasExpected = views.some(v => v.c.expected != null);
   const expected = views.reduce((s, v) => s + (v.c.expected || 0), 0);
-  const evLabel = e => e.type === 'clerk' ? 'Email OATH clerk · ' + e.count + ' case' + (e.count === 1 ? '' : 's') + ' (' + spFmtDay(e.hearing) + ' hearing)'
+  const evLabel = e => e.type === 'clerk' ? 'Email OATH clerk · ' + e.count + ' case' + (e.count === 1 ? '' : 's') + ' (' + spFmtDay(e.hearing) + ')'
     : e.type === 'hearing' ? 'Hearing day · ' + e.count + ' case' + (e.count === 1 ? '' : 's')
     : 'Vacate window ends · ' + (e.view.c.company || e.view.c.summons);
   document.getElementById('sp-stats').innerHTML = `
     <div class="stat-card"><div class="label">Cases Active</div><div class="value blue">${views.length}</div><div class="sub">${withSummons} with a summons #</div></div>
     <div class="stat-card"><div class="label">Upcoming Hearings</div><div class="value blue">${views.filter(v => v.upcoming).length}</div><div class="sub">${nextHearing ? 'next: ' + esc(spFmtDay(nextHearing.date)) : '—'}</div></div>
-    <div class="stat-card"><div class="label">Decided</div><div class="value orange">${views.filter(v => v.decided).length}</div><div class="sub">by OATH, any result</div></div>
-    <div class="stat-card"><div class="label">Paid</div><div class="value success">${paidViews.length}</div><div class="sub">${money(gross)} collected by OATH</div></div>
-    <div class="stat-card"><div class="label">Expected Payout</div><div class="value orange">${hasExpected ? money(expected) : '—'}</div><div class="sub">${hasExpected ? 'sum of the sheet\'s Expected Payout' : 'add an "Expected Payout" column to the sheet tab'}</div></div>
-    <div class="stat-card"><div class="label">Collected So Far</div><div class="value success">${money(collected)}</div><div class="sub">your 50% of paid cases</div></div>
-    <div class="stat-card"><div class="label">Next Deadline</div><div class="value blue" style="font-size:1.15em;">${nextEv ? esc(spFmtDay(nextEv.date)) : '—'}</div><div class="sub">${nextEv ? esc(evLabel(nextEv)) : 'nothing upcoming'}</div></div>`;
+    <div class="stat-card"><div class="label">Decided</div><div class="value orange">${views.filter(v => v.decided).length}</div><div class="sub">OATH has ruled</div></div>
+    <div class="stat-card"><div class="label">Paid</div><div class="value success">${paidViews.length}</div><div class="sub">${money(gross)} collected</div></div>
+    <div class="stat-card"><div class="label">Expected Payout</div><div class="value orange">${hasExpected ? money(expected) : '—'}</div><div class="sub">${hasExpected ? 'from the sheet' : 'add an "Expected Payout" column'}</div></div>
+    <div class="stat-card"><div class="label">Collected So Far</div><div class="value success">${money(collected)}</div><div class="sub">your 50% share</div></div>
+    <div class="stat-card"><div class="label">Next Deadline</div><div class="value blue">${nextEv ? esc(spFmtDay(nextEv.date)) : '—'}</div><div class="sub">${nextEv ? esc(evLabel(nextEv)) : 'nothing upcoming'}</div></div>`;
 
   // ---- 2. live status table ----
   const statusSel = document.getElementById('sp-filter-status'), dateSel = document.getElementById('sp-filter-date');
@@ -3234,17 +3243,25 @@ function renderSelfPursue(){
     if(!dayViews.some(v => v.c.directLink || v.c.complaint)) missing.push('Complaint #');
     if(!dayViews.some(v => spPriorLinks(v.c).length)) missing.push('Prior Violation 1 / Prior Violation 2');
   }
+  const hasPriorData = views.some(v => spPriorLinks(v.c).length || v.c.priorNote);
   document.getElementById('sp-day').innerHTML = !dayViews.length ? '<div class="empty">Pick a hearing date above.</div>' :
     (missing.length ? `<div class="sp-hint">Not shown yet — add ${missing.map(m => '<b>' + esc(m) + '</b>').join(', ')} column${missing.length === 1 ? '' : 's'} to the Self-Pursue sheet tab to fill these in here.</div>` : '') +
     dayViews.map(v => {
       const priors = spPriorLinks(v.c), cl = v.c.directLink || cLinks[v.c.complaint], win = spIdlingWindow(v.c.description), plate = spPlateOf(v.c);
       const row = (k, val) => val ? `<div><span class="sp-k">${k}</span>${val}</div>` : '';
+      // The nycidling complaint page holds the evidence (video/photos). Direct Link comes from the
+      // tab itself or, failing that, from the master sheet by complaint #.
+      const evidence = cl
+        ? `<a class="sp-evidence" href="${esc(cl)}" target="_blank" rel="noopener">🔗 Open the evidence on nycidling ↗</a>${v.c.complaint ? ` <span class="sp-dim">(${esc(v.c.complaint)})</span>` : ''}`
+        : (v.c.complaint ? `${esc(v.c.complaint)} <span class="sp-dim">— no nycidling link for this complaint in the master sheet yet</span>` : '');
+      const priorRows = priors.map((p, i) => row('Prior ' + (i + 1), p.summons
+        ? `<a href="${esc(spTicketFinderUrl(p.summons))}" target="_blank" rel="noopener">${esc(p.text)} ↗</a>` : esc(p.text))).join('');
       return `<div class="sp-day-card"><h3>${esc(v.c.company) || '—'} · ${v.c.summons ? `<a href="${esc(spTicketFinderUrl(v.c.summons))}" target="_blank" rel="noopener">${esc(v.c.summons)}</a>` : esc(v.c.complaint)}</h3>
         ${row('OATH status', esc(v.statusLabel) + (v.o && v.o.hearingResult ? ' · ' + esc(v.o.hearingResult) : ''))}
         ${row('Plate', esc(plate))}${row('Idling window', esc(win))}
         ${row('Offense', esc(spOffenseLabel(v)) !== '—' ? esc(spOffenseLabel(v)) + (v.c.mailIn ? ' · mail-in ' + esc(v.c.mailIn) : '') : '')}
-        ${row('Complaint', cl ? `<a href="${esc(cl)}" target="_blank" rel="noopener">${esc(v.c.complaint || 'open complaint')}</a>` : esc(v.c.complaint))}
-        ${priors.length ? row('Priors', priors.map(p => p.summons ? `<a href="${esc(spTicketFinderUrl(p.summons))}" target="_blank" rel="noopener">${esc(p.text)}</a>` : esc(p.text)).join('<br><span class="sp-k"></span>')) : ''}
+        ${row('Evidence', evidence)}
+        ${priorRows || (hasPriorData ? row('Priors', '<span class="sp-dim">none on file</span>') : '')}
         ${row('Prior note', esc(v.c.priorNote))}${row('Likely outcome', esc(v.c.likely))}</div>`;
     }).join('');
 }
