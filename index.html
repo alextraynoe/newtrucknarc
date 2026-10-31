@@ -41,6 +41,29 @@
   .icon-btn:hover{background:rgba(255,255,255,.38);}
 
   .status-line{font-size:.75em; color:var(--dim2); margin:-4px 0 12px 2px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;}
+  /* Self-Pursue tab. Colors come from the shared variables / translucent tints, so it follows the
+     rest of the dashboard; the board and tables scroll sideways on narrow screens. */
+  .sp-status{font-size:.78em; color:var(--dim); margin:0 0 12px 2px; line-height:1.6;}
+  .sp-status .sp-err{color:var(--danger); font-weight:600;}
+  tr.sp-changed td{background:rgba(255,193,7,.22);}
+  .sp-chg{display:inline-block; margin-left:6px; padding:1px 7px; border-radius:10px; font-size:.78em; font-weight:700; background:rgba(255,193,7,.35); color:var(--warn);}
+  .sp-board{display:flex; gap:10px; overflow-x:auto; padding-bottom:6px;}
+  .sp-col{flex:1 0 150px; min-width:150px; background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:8px;}
+  .sp-col h4{font-size:.74em; text-transform:uppercase; letter-spacing:.04em; color:var(--dim); display:flex; justify-content:space-between; margin-bottom:4px;}
+  .sp-col .sp-cards{max-height:340px; overflow-y:auto;}
+  .sp-card{background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:5px 8px; margin-top:5px; font-size:.7em; line-height:1.4;}
+  .sp-card b{display:block; word-break:break-word;}
+  .sp-dl{display:flex; gap:12px; align-items:baseline; padding:8px 0; border-bottom:1px solid var(--border); font-size:.82em; flex-wrap:wrap;}
+  .sp-dl:last-child{border-bottom:none;}
+  .sp-dl > span:last-child{flex:1 1 0; min-width:240px;}
+  .sp-dl .btn, #sp-payout td .btn{padding:3px 10px; font-size:.78em; margin-left:6px;}
+  .sp-dl .sp-when{min-width:96px; font-weight:700;}
+  .sp-dl.sp-soon .sp-when{color:var(--danger);}
+  .sp-dl .sp-kind{min-width:110px; font-size:.78em; text-transform:uppercase; letter-spacing:.04em; color:var(--dim);}
+  .sp-day-card{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:10px; background:var(--panel2); font-size:.82em; line-height:1.55;}
+  .sp-day-card h3{font-size:1em; margin-bottom:4px;}
+  .sp-day-card .sp-k{display:inline-block; min-width:84px; color:var(--dim); font-size:.9em;}
+  .sp-hint{font-size:.74em; color:var(--dim2); margin:2px 0 10px;}
   .rgr-bar-wrap{display:none; align-items:center; gap:6px;}
   .rgr-bar-wrap.active{display:flex;}
   .rgr-bar{width:110px; height:6px; background:var(--panel2); border:1px solid var(--border); border-radius:3px; overflow:hidden;}
@@ -320,6 +343,7 @@
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
     <button class="tab-btn" data-tab="changes">Changes<span class="pip" id="changes-pip" style="display:none;">0</span></button>
+    <button class="tab-btn" data-tab="selfpursue">Self-Pursue</button>
     <button class="tab-btn" data-tab="map">Map</button>
   </div>
 
@@ -608,6 +632,47 @@
     </div>
   </section>
 
+  <!-- SELF-PURSUE: cases pursued directly at OATH (50% share). Built by renderSelfPursue(). -->
+  <section class="tab-content" id="tab-selfpursue">
+    <div class="sp-status" id="sp-status"></div>
+    <div class="grid" id="sp-stats"></div>
+
+    <div class="panel">
+      <h2>Live Status <span class="tag" id="sp-table-tag"></span></h2>
+      <p class="desc">One row per summons, checked against NYC OATH in a single batched lookup on every refresh. Rows highlighted in yellow changed since your last visit.</p>
+      <div class="search-row">
+        <input type="search" id="sp-search" placeholder="Search summons or company…">
+        <select id="sp-filter-status"><option value="">All statuses</option></select>
+        <select id="sp-filter-date"><option value="">All hearing dates</option></select>
+        <button class="btn ghost" id="sp-mark-seen" title="Clear the yellow 'changed' highlights">Mark all as seen</button>
+      </div>
+      <div class="table-wrap"><table id="sp-table"></table></div>
+    </div>
+
+    <div class="panel">
+      <h2>Pipeline <span class="tag" id="sp-board-tag"></span></h2>
+      <div class="sp-board" id="sp-board"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Payout Tracker <span class="tag" id="sp-payout-tag"></span></h2>
+      <p class="desc">Paid cases and your 50% share. Tick "requested" once you've emailed <b>penaltyprocessing@OATH.nyc.gov</b>.</p>
+      <div id="sp-payout"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Deadlines <span class="tag" id="sp-deadline-tag"></span></h2>
+      <p class="desc">OATH clerk email (3 business days before each hearing, skipping weekends and NYC holidays), hearing days, and the 75-day vacate window for each default.</p>
+      <div id="sp-deadlines"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Hearing-Day Helper</h2>
+      <div class="search-row"><select id="sp-day-select"></select></div>
+      <div id="sp-day"></div>
+    </div>
+  </section>
+
   <section class="tab-content" id="tab-map">
     <div class="panel">
       <h2>Map <span class="tag">Google My Maps</span></h2>
@@ -635,7 +700,8 @@
       <input type="text" id="cfg-gid-mbt" placeholder="Alt gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-requested" placeholder="Requested gid" style="margin-bottom:6px;">
       <input type="text" id="cfg-gid-paid" placeholder="Paid gid" style="margin-bottom:6px;">
-      <input type="text" id="cfg-gid-disqreasons" placeholder="Disqualification Reasons gid">
+      <input type="text" id="cfg-gid-disqreasons" placeholder="Disqualification Reasons gid" style="margin-bottom:6px;">
+      <input type="text" id="cfg-gid-selfpursue" placeholder="Self-Pursue gid (blank = tab off)">
     </div>
     <div class="field">
       <label>Map tab — Google My Maps ID (the mid= value from your map's URL)</label>
@@ -762,7 +828,8 @@ const DEFAULTS = {
     mbt: '1576428771',
     requested: '879915234',
     paid: '1900607470',
-    disqreasons: '476493654'
+    disqreasons: '476493654',
+    selfpursue: '1766977092'
   },
   vendors: {
     at:    { code:'VS00083313', name:'Alexander Traynor',       address:'374 Monaco Ln, Glastonbury, CT 06033' },
@@ -1699,11 +1766,15 @@ function classifyRow(rec){
 async function loadAllData(silent){
   if(!silent) setStatus('Fetching latest data…', true);
   for(const k of Object.keys(fetchErrors)) delete fetchErrors[k];
-  const [atnycRows, atRows, mbtRows, reqRows, paidRows, disqRows] = await Promise.all([
+  const [atnycRows, atRows, mbtRows, reqRows, paidRows, disqRows, spRows] = await Promise.all([
     fetchCSV(CFG.gids.atnyc,'ATNYC'), fetchCSV(CFG.gids.at,'AT'), fetchCSV(CFG.gids.mbt,'MBT'),
     fetchCSV(CFG.gids.requested,'Requested'), fetchCSV(CFG.gids.paid,'Paid'),
-    fetchCSV(CFG.gids.disqreasons,'DisqReasons')
+    fetchCSV(CFG.gids.disqreasons,'DisqReasons'),
+    CFG.gids.selfpursue ? fetchCSV(CFG.gids.selfpursue,'SelfPursue') : Promise.resolve(null)
   ]);
+  // Self-Pursue: a failed sheet fetch (null) keeps the last cached rows instead of blanking the tab.
+  const spPrev = appData.sp || {};
+  const spNext = { sheet: spRows || spPrev.sheet || [], oath: spPrev.oath || {}, lastOath: spPrev.lastOath || null, oathError: spPrev.oathError || null };
   // Complaint Number -> specific disqualification reason. Joined by COMPLAINT number:
   // disqualified complaints never get a real summons, so there's nothing else to join on.
   const disqMap = {};
@@ -1771,7 +1842,8 @@ async function loadAllData(silent){
   });
 
   if(CFG.enrich !== 'off'){
-    await enrichFromNYC(merged);
+    // Self-Pursue's one batched OATH lookup runs alongside the main enrichment, same toggle.
+    await Promise.all([enrichFromNYC(merged), spRefreshOath(spNext)]);
     carryForwardFailedEnrichment(merged);
     // re-classify after enrichment in case hearing_result changed to/from "dismissed",
     // and re-derive offense tiers now that real dollar amounts are in
@@ -1788,6 +1860,7 @@ async function loadAllData(silent){
 
   SURV = null; // survival model must rebuild against fresh data
   appData.merged = merged;
+  appData.sp = spNext;
   appData.requestedRaw = requested;
   appData.paidRaw = paid;
   appData.lastRefresh = new Date().toISOString();
@@ -2426,6 +2499,256 @@ function computePendingForecasts(){
   return rows;
 }
 
+/* ============================== SELF-PURSUE (pure logic) ============================== */
+/* Cases the user is pursuing at OATH directly (self-served summonses; 50% of what's collected).
+   Source is one small published tab on the main sheet (gid in Settings). It's read BY HEADER
+   NAME, not column letter, and only 'Summons Number' is required: Company Name, Hearing Date,
+   Complaint #, Plate, Offense, Expected Payout, Description, Direct Link, Prior Violation 1/2,
+   Prior Note, Written/Mailed/Notarized/Fedcap are all optional, and every section degrades
+   (with a hint naming the missing column) instead of breaking when one is absent.
+   Summons numbers are 10-digit STRINGS ("0223137027") — Sheets drops the leading zero when the
+   column is numeric ('223137027'), so a bare 9-digit number is re-padded. They're never numbers.
+   NYC's bulk dataset only lists a paper summons weeks after it's filed, so "not in OATH yet"
+   is a normal state, not an error. Paid status goes through the Paid-in-Full ledger like every
+   other source (see reconcilePIFLedger) — it's a one-way door here too. */
+const SP_SHARE = 0.5;               // user's share of what OATH collects on a self-pursued case
+const SP_VACATE_DAYS = 75;          // a default can be vacated for 75 days after the decision
+const SP_CLERK_LEAD_BDAYS = 3;      // OATH clerk must be emailed 3 business days before the hearing
+const SP_CLERK_EMAIL = 'remotemanhattan@oath.nyc.gov';
+const SP_PAYOUT_EMAIL = 'penaltyprocessing@OATH.nyc.gov';
+const LS_SP_SEEN = 'truckNarcSPSeen';       // last-seen OATH snapshot, for "changed since last visit"
+const LS_SP_SHARE = 'truckNarcSPShareReq';  // summons -> ISO time the user marked "share requested"
+
+function spDayKey(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function spNormSummons(s){
+  let v = String(s == null ? '' : s).replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+  if(/^\d{9}$/.test(v)) v = '0' + v;
+  return v;
+}
+function spTicketFinderUrl(s){
+  return 'https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=' +
+    encodeURIComponent(s) + '&searchViolationObject.searchType=violationNumber&submit=Search';
+}
+function spOathUrl(sums){
+  // ONE request for every summons. No $select on purpose: naming a column the dataset doesn't
+  // have (e.g. date_judgment_docketed) is an HTTP 400 for the whole batch.
+  const where = 'ticket_number in(' + sums.map(s => "'" + s + "'").join(',') + ')';
+  return 'https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=' + encodeURIComponent(where) + '&$limit=1000';
+}
+
+/* NYC municipal holidays (the days the OATH clerk's office is closed). Sunday holidays move to
+   Monday; Saturday ones are not moved. Edit here if the clerk's calendar differs. */
+const spHolidayCache = {};
+function spNthWeekday(year, month, weekday, n){
+  if(n > 0){
+    const first = new Date(year, month, 1);
+    return new Date(year, month, 1 + ((weekday - first.getDay() + 7) % 7) + (n - 1) * 7);
+  }
+  const last = new Date(year, month + 1, 0);
+  return new Date(year, month, last.getDate() - ((last.getDay() - weekday + 7) % 7));
+}
+function spHolidays(year){
+  if(spHolidayCache[year]) return spHolidayCache[year];
+  const set = new Set();
+  const add = d => set.add(spDayKey(d));
+  const fixed = (m, day) => { const d = new Date(year, m, day); if(d.getDay() === 0) d.setDate(d.getDate() + 1); add(d); };
+  fixed(0, 1);                                   // New Year's Day
+  add(spNthWeekday(year, 0, 1, 3));              // MLK Day
+  add(spNthWeekday(year, 1, 1, 3));              // Presidents' Day
+  add(spNthWeekday(year, 4, 1, -1));             // Memorial Day
+  fixed(5, 19);                                  // Juneteenth
+  fixed(6, 4);                                   // Independence Day
+  add(spNthWeekday(year, 8, 1, 1));              // Labor Day
+  add(spNthWeekday(year, 9, 1, 2));              // Columbus Day
+  add(new Date(year, 10, spNthWeekday(year, 10, 1, 1).getDate() + 1)); // Election Day
+  fixed(10, 11);                                 // Veterans Day
+  add(spNthWeekday(year, 10, 4, 4));             // Thanksgiving
+  fixed(11, 25);                                 // Christmas
+  return spHolidayCache[year] = set;
+}
+function spIsBusinessDay(d){
+  const wd = d.getDay();
+  return wd !== 0 && wd !== 6 && !spHolidays(d.getFullYear()).has(spDayKey(d));
+}
+function spBusinessDaysBefore(date, n){
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  let left = n;
+  while(left > 0){ d.setDate(d.getDate() - 1); if(spIsBusinessDay(d)) left--; }
+  return d;
+}
+
+function spPick(row, ...patterns){
+  for(const rk of Object.keys(row)){
+    if(patterns.some(p => p.test(rk.trim()))){ const v = row[rk]; if(v !== '' && v != null) return v; }
+  }
+  return '';
+}
+function spTruthy(v){ return /^(true|yes|y|1|x|✓|✔)$/i.test(String(v || '').trim()); }
+function spParseSheet(rows){
+  const out = [], seen = new Set();
+  for(const r of (rows || [])){
+    const summons = spNormSummons(spPick(r, /^(summons|ticket)(\s*(number|#|no\.?))?$/i));
+    const complaint = String(spPick(r, /^complaint(\s*(#|number|no\.?))?(\s*\(ref only\))?$/i)).trim();
+    if(!summons && !complaint) continue;
+    const key = summons || ('c:' + complaint);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    const status = spPick(r, /^status$/i);
+    if(status && !/pursu/i.test(status)) continue; // a Status column, if present, marks inactive cases
+    const prog = {
+      written: spPick(r, /^written$/i), mailed: spPick(r, /^mailed$/i),
+      notarized: spPick(r, /^notarized$/i), fedcap: spPick(r, /fedcap/i)
+    };
+    const expectedRaw = spPick(r, /^expected payout/i);
+    out.push({
+      key, summons, complaint,
+      company: spPick(r, /^(company( name)?|legal name( \(dos\))?|respondent( \(as filed\))?)$/i),
+      hearingDate: spPick(r, /^hearing date$/i),
+      offense: spPick(r, /^offense$/i), code: spPick(r, /^oath code$/i), mailIn: spPick(r, /^mail-?in penalty$/i),
+      plate: spPick(r, /^(license )?plate$/i),
+      expected: expectedRaw === '' ? null : numFrom(expectedRaw),
+      description: spPick(r, /^description/i),
+      directLink: spPick(r, /^(direct link|complaint link)$/i),
+      prior1: spPick(r, /^prior violation\s*#?\s*1/i), prior2: spPick(r, /^prior violation\s*#?\s*2/i),
+      priorNote: spPick(r, /^prior([- ]offense)? note/i),
+      likely: spPick(r, /^(what they.ll likely do|likely outcome)/i),
+      hasProgress: Object.values(prog).some(v => v !== ''),
+      progress: { written: spTruthy(prog.written), mailed: spTruthy(prog.mailed), notarized: spTruthy(prog.notarized), fedcap: spTruthy(prog.fedcap) }
+    });
+  }
+  return out;
+}
+
+function spOathRow(raw){
+  return {
+    summons: String(raw.ticket_number || ''), _liveConfirmed: true,
+    hearingStatus: raw.hearing_status || '', hearingResult: raw.hearing_result || '',
+    hearingDate: raw.hearing_date || '',
+    penalty: numFrom(raw.penalty_imposed), paidAmount: numFrom(raw.paid_amount),
+    balanceDue: (raw.balance_due == null || raw.balance_due === '') ? null : numFrom(raw.balance_due),
+    decisionDate: raw.decision_date || raw.date_judgment_docketed || '',
+    violationAmount: numFrom(raw.total_violation_amount), code: raw.charge_1_code || ''
+  };
+}
+// Decided = OATH has ruled (any result), or the status says the case is past the hearing.
+function spDecided(o){
+  return !!String(o.hearingResult || '').trim() || /DEFAULT|HEARING COMPLETED|PAID IN FULL|APPEAL/i.test(o.hearingStatus || '');
+}
+function spPaid(o){ return isPIFText(o.hearingStatus) || (o.paidAmount || 0) > 0; }
+function spStage(c, o, shareRequested){
+  if(o){
+    if(spPaid(o)) return shareRequested ? 'Share requested' : 'Paid';
+    return spDecided(o) ? 'Decided' : 'Hearing';
+  }
+  if(c.progress.fedcap) return 'Filed w/ Fedcap';
+  if(c.progress.notarized) return 'Notarized';
+  if(c.progress.mailed) return 'Mailed';
+  if(c.progress.written) return 'Written';
+  return c.hasProgress ? 'Not started' : 'Awaiting OATH';
+}
+function spBuildViews(cases, oathMap, shareReq, now){
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return cases.map(c => {
+    const o = (c.summons && oathMap && oathMap[c.summons]) || null;
+    // OATH's hearing date wins over the sheet's once the case is in the dataset (it moves on RESCHEDULED).
+    const hearing = (o && o.hearingDate && parseDate(o.hearingDate)) || parseDate(c.hearingDate);
+    const decided = !!o && spDecided(o), paid = !!o && spPaid(o);
+    const requested = !!(shareReq && c.summons && shareReq[c.summons]);
+    return {
+      c, o, hearing, hearingKey: hearing ? spDayKey(hearing) : '', decided, paid, requested,
+      stage: spStage(c, o, requested),
+      statusLabel: !c.summons ? 'No summons # yet' : (!o ? 'Not in OATH yet' : (o.hearingStatus || 'In OATH')),
+      share: paid ? (o.paidAmount || 0) * SP_SHARE : 0,
+      upcoming: !!hearing && !decided && hearing >= today,
+      sig: o ? [o.hearingStatus, o.hearingResult, o.penalty, o.paidAmount, o.balanceDue, o.hearingDate, o.decisionDate].join('|') : 'none'
+    };
+  });
+}
+// Upcoming events, soonest first: the clerk email for each hearing day, the hearing day itself,
+// and the end of the 75-day vacate window for each default.
+function spDeadlines(views, now){
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = {};
+  for(const v of views){
+    if(!v.hearing || v.decided) continue;
+    (days[v.hearingKey] = days[v.hearingKey] || { date: v.hearing, views: [] }).views.push(v);
+  }
+  const events = [];
+  for(const k of Object.keys(days)){
+    const d = days[k], summons = d.views.map(v => v.c.summons).filter(Boolean);
+    events.push({ type: 'clerk', date: spBusinessDaysBefore(d.date, SP_CLERK_LEAD_BDAYS), hearing: d.date, count: d.views.length, summons });
+    events.push({ type: 'hearing', date: d.date, count: d.views.length, summons });
+  }
+  for(const v of views){
+    if(!v.o || !/DEFAULT/i.test((v.o.hearingStatus || '') + ' ' + (v.o.hearingResult || ''))) continue;
+    const base = (v.o.decisionDate && parseDate(v.o.decisionDate)) || v.hearing;
+    if(!base) continue;
+    events.push({ type: 'vacate', date: new Date(base.getFullYear(), base.getMonth(), base.getDate() + SP_VACATE_DAYS), count: 1, view: v, summons: [v.c.summons] });
+  }
+  const rank = { clerk: 0, hearing: 1, vacate: 2 };
+  return events.filter(e => e.date >= today).sort((a, b) => (a.date - b.date) || (rank[a.type] - rank[b.type]));
+}
+function spIdlingWindow(desc){
+  const m = String(desc || '').match(/idling\s+from\s+([0-9:]+\s*[ap]m)\s+to\s+([0-9:]+\s*[ap]m)/i);
+  return m ? m[1] + ' – ' + m[2] : '';
+}
+function spPlateOf(c){
+  if(c.plate) return c.plate;
+  const m = String(c.description || '').match(/license plate\s+([A-Z0-9]+)/i);
+  return m ? m[1].toUpperCase() : '';
+}
+function spPriorLinks(c){
+  return [c.prior1, c.prior2].filter(Boolean).map(text => {
+    const m = String(text).match(/\b(\d{9}[A-Z]|\d{10})\b/);
+    return { text, summons: m ? m[1] : '' };
+  });
+}
+function spPayoutEmail(views, me){
+  const list = views.filter(v => v.c.summons), one = list.length === 1;
+  const lines = list.map(v => 'Summons ' + v.c.summons + (v.c.company ? ' — ' + v.c.company : '') +
+    (v.o && v.o.paidAmount ? ' (collected ' + money(v.o.paidAmount) + ')' : ''));
+  return {
+    to: SP_PAYOUT_EMAIL,
+    subject: one ? 'Citizen petitioner share request — Summons ' + list[0].c.summons : 'Citizen petitioner share request — ' + list.length + ' summonses',
+    body: 'Hello,\n\nI am the citizen petitioner under the Citizens Air Complaint Program (NYC Admin. Code § 24-182) for the ' +
+      (one ? 'summons' : 'summonses') + ' listed below, which ' + (one ? 'has' : 'have') + ' been paid. I am requesting my share of the penalty collected.\n\n' +
+      lines.join('\n') + '\n\nName: ' + me.name + '\nMailing address: ' + me.address +
+      '\n\nPlease let me know if you need anything further to process this.\n\nThank you,\n' + me.name
+  };
+}
+// One batched OATH request for every summons (chunked only past 200, far beyond today's 70).
+// Mutates `sp`. A summons NYC has already reported is never un-known by a later response that
+// omits it, and a failed chunk leaves its last known rows in place instead of blanking them.
+async function spRefreshOath(sp){
+  const cases = spParseSheet(sp.sheet || []);
+  const sums = [...new Set(cases.map(c => c.summons).filter(Boolean))];
+  if(!sums.length) return;
+  const prev = sp.oath || {}, next = {};
+  for(const s of sums) if(prev[s]) next[s] = prev[s];
+  let failed = 0, lastErr = null;
+  for(let i = 0; i < sums.length; i += 200){
+    const chunk = sums.slice(i, i + 200);
+    let rows = null;
+    for(let attempt = 0; attempt < 2 && rows === null; attempt++){
+      try{
+        const res = await fetchWithTimeout(spOathUrl(chunk), 15000);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const body = await res.json();
+        if(!Array.isArray(body)) throw new Error('unexpected response');
+        rows = body;
+      }catch(e){ lastErr = e; }
+    }
+    if(rows === null){ failed += chunk.length; continue; }
+    for(const raw of rows) if(raw && raw.ticket_number) next[raw.ticket_number] = spOathRow(raw);
+  }
+  reconcilePIFLedger(Object.values(next), Object.values(prev), []);
+  sp.oath = next;
+  if(failed < sums.length) sp.lastOath = new Date().toISOString();
+  sp.oathError = failed
+    ? 'NYC OATH lookup failed for ' + failed + ' of ' + sums.length + ' summonses (' + ((lastErr && lastErr.message) || 'network error') + ') — showing the last known status'
+    : null;
+}
+
 /* ============================== RENDER: HOME ============================== */
 let homeSort = { key:'incident', dir:-1 };
 let EST_HEARING = null; // set per render pass from getLagModels().hearing
@@ -2697,6 +3020,264 @@ function renderNewMoney(){
     <div class="stat-card"><div class="label">Pending Requests</div><div class="value blue">${pendingReq.length}</div><div class="sub">${money(totalExpected)} expected</div></div>
     <div class="stat-card" title="Median lag of completed payments is stale here — it only sees requests that already finished, so it can't reflect a pipeline that keeps getting slower. This instead uses the current (still-accruing) wait of requests already past that ${Math.round(avgLag)}d benchmark."><div class="label">Current Payment Lag</div><div class="value blue">${curLag.days.toFixed(0)} days</div><div class="sub">${curLag.n ? `median wait among ${curLag.n} requests already past the ${Math.round(avgLag)}d benchmark` : `not enough overdue requests yet — falling back to the ${payLag.n}-request historical median`}</div></div>
   `;
+}
+
+/* ============================== SELF-PURSUE (render) ============================== */
+const spUI = { sortKey: 'hearing', sortDir: 1, fStatus: '', fDate: '', q: '', day: '', baseline: null, current: null };
+function spLoadJSON(key, fallback){ try{ return JSON.parse(localStorage.getItem(key) || 'null') || fallback; }catch(e){ return fallback; } }
+function spSaveJSON(key, v){ try{ localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
+function spMe(){
+  const v = (CFG.vendors && CFG.vendors.atnyc) || {};
+  return { name: v.name || 'Alexander Traynor', address: v.address || '374 Monaco Ln, Glastonbury, CT 06033' };
+}
+function spViews(){
+  const sp = appData.sp || {};
+  return spBuildViews(spParseSheet(sp.sheet || []), sp.oath || {}, spLoadJSON(LS_SP_SHARE, {}), new Date());
+}
+// Complaint # -> Direct Link, from the master sheets, only built when a case needs it.
+function spComplaintLinks(views){
+  if(!views.some(v => v.c.complaint && !v.c.directLink)) return {};
+  const m = {};
+  for(const r of (appData.merged || [])){ if(r.complaintNumber){ const l = directLinkOf(r); if(l) m[r.complaintNumber] = l; } }
+  return m;
+}
+function spFmtDay(d){ return d ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' }) : '—'; }
+function spOffenseLabel(v){ return [v.c.offense, v.c.code].filter(Boolean).join(' · ') || (v.o && v.o.code) || '—'; }
+function spCopyFallback(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ alert('Copy failed — select and copy manually:\n\n' + text); }
+  ta.remove();
+}
+function spCopy(text, btn){
+  const done = () => {
+    if(!btn) return;
+    const old = btn.dataset.label || btn.textContent; btn.dataset.label = old;
+    btn.textContent = '✅ Copied'; setTimeout(() => { btn.textContent = old; }, 1800);
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => spCopyFallback(text, done));
+  else spCopyFallback(text, done);
+}
+function spEmailText(m){ return 'To: ' + m.to + '\nSubject: ' + m.subject + '\n\n' + m.body; }
+// "Changed since last visit" compares against the snapshot saved when you last LOOKED at this tab
+// (leaving it, or hiding the page while it's open) — saving on every refresh would overwrite the
+// baseline before you ever saw what changed.
+function spMarkSeen(){
+  if(spUI.current && Object.keys(spUI.current).length){ spSaveJSON(LS_SP_SEEN, spUI.current); spUI.baseline = spUI.current; }
+}
+function spOnLeave(newTab){
+  const el = document.getElementById('tab-selfpursue');
+  if(el && el.classList.contains('active') && newTab !== 'selfpursue') spMarkSeen();
+}
+
+function renderSelfPursue(){
+  const root = document.getElementById('tab-selfpursue');
+  if(!root) return;
+  const sp = appData.sp || {};
+  const views = spViews();
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const snap = {};
+  views.forEach(v => { if(v.c.summons) snap[v.c.summons] = v.sig; });
+  if(spUI.baseline === null && views.length){
+    const seen = spLoadJSON(LS_SP_SEEN, null);
+    spUI.baseline = seen || snap;
+    if(!seen) spSaveJSON(LS_SP_SEEN, snap);
+  }
+  spUI.current = snap;
+  const changed = v => !!(spUI.baseline && v.c.summons && spUI.baseline[v.c.summons] !== undefined && spUI.baseline[v.c.summons] !== v.sig);
+
+  // ---- status line ----
+  const withSummons = views.filter(v => v.c.summons).length, inOath = views.filter(v => v.o).length;
+  const errs = [];
+  if(fetchErrors.SelfPursue) errs.push('Couldn\'t load the Self-Pursue sheet tab (' + fetchErrors.SelfPursue + ') — showing the last loaded cases.');
+  if(sp.oathError) errs.push(sp.oathError + '.');
+  let st;
+  if(!CFG.gids.selfpursue) st = 'The Self-Pursue tab is off — add its sheet gid in Settings.';
+  else if(!views.length) st = 'No cases loaded yet. This tab reads the published sheet tab with gid <b>' + esc(CFG.gids.selfpursue) + '</b> (needs a <b>Summons Number</b> column; <b>Company Name</b> and <b>Hearing Date</b> recommended).';
+  else st = '<b>' + views.length + '</b> cases · <b>' + inOath + '</b> of ' + withSummons + ' summonses found in OATH' + (inOath < withSummons ? ' (paper summonses can take weeks to appear — that\'s normal)' : '') +
+    (sp.lastOath ? ' · last OATH check ' + esc(new Date(sp.lastOath).toLocaleString()) : '');
+  document.getElementById('sp-status').innerHTML = st + errs.map(e => '<div class="sp-err">' + esc(e) + '</div>').join('');
+
+  // ---- 1. summary ----
+  const events = spDeadlines(views, now);
+  const nextEv = events[0];
+  const nextHearing = events.find(e => e.type === 'hearing');
+  const paidViews = views.filter(v => v.paid);
+  const collected = paidViews.reduce((s, v) => s + v.share, 0);
+  const gross = paidViews.reduce((s, v) => s + ((v.o && v.o.paidAmount) || 0), 0);
+  const hasExpected = views.some(v => v.c.expected != null);
+  const expected = views.reduce((s, v) => s + (v.c.expected || 0), 0);
+  const evLabel = e => e.type === 'clerk' ? 'Email OATH clerk · ' + e.count + ' case' + (e.count === 1 ? '' : 's') + ' (' + spFmtDay(e.hearing) + ' hearing)'
+    : e.type === 'hearing' ? 'Hearing day · ' + e.count + ' case' + (e.count === 1 ? '' : 's')
+    : 'Vacate window ends · ' + (e.view.c.company || e.view.c.summons);
+  document.getElementById('sp-stats').innerHTML = `
+    <div class="stat-card"><div class="label">Cases Active</div><div class="value blue">${views.length}</div><div class="sub">${withSummons} with a summons #</div></div>
+    <div class="stat-card"><div class="label">Upcoming Hearings</div><div class="value blue">${views.filter(v => v.upcoming).length}</div><div class="sub">${nextHearing ? 'next: ' + esc(spFmtDay(nextHearing.date)) : '—'}</div></div>
+    <div class="stat-card"><div class="label">Decided</div><div class="value orange">${views.filter(v => v.decided).length}</div><div class="sub">by OATH, any result</div></div>
+    <div class="stat-card"><div class="label">Paid</div><div class="value success">${paidViews.length}</div><div class="sub">${money(gross)} collected by OATH</div></div>
+    <div class="stat-card"><div class="label">Expected Payout</div><div class="value orange">${hasExpected ? money(expected) : '—'}</div><div class="sub">${hasExpected ? 'sum of the sheet\'s Expected Payout' : 'add an "Expected Payout" column to the sheet tab'}</div></div>
+    <div class="stat-card"><div class="label">Collected So Far</div><div class="value success">${money(collected)}</div><div class="sub">your 50% of paid cases</div></div>
+    <div class="stat-card"><div class="label">Next Deadline</div><div class="value blue" style="font-size:1.15em;">${nextEv ? esc(spFmtDay(nextEv.date)) : '—'}</div><div class="sub">${nextEv ? esc(evLabel(nextEv)) : 'nothing upcoming'}</div></div>`;
+
+  // ---- 2. live status table ----
+  const statusSel = document.getElementById('sp-filter-status'), dateSel = document.getElementById('sp-filter-date');
+  const statuses = [...new Set(views.map(v => v.statusLabel))].sort();
+  const dates = [...new Set(views.map(v => v.hearingKey).filter(Boolean))].sort();
+  if(spUI.fStatus && !statuses.includes(spUI.fStatus)) spUI.fStatus = '';
+  if(spUI.fDate && !dates.includes(spUI.fDate)) spUI.fDate = '';
+  statusSel.innerHTML = '<option value="">All statuses</option>' + statuses.map(s => `<option value="${esc(s)}"${s === spUI.fStatus ? ' selected' : ''}>${esc(s)}</option>`).join('');
+  dateSel.innerHTML = '<option value="">All hearing dates</option>' + dates.map(k => {
+    const [y, m, d] = k.split('-').map(Number);
+    return `<option value="${k}"${k === spUI.fDate ? ' selected' : ''}>${esc(spFmtDay(new Date(y, m - 1, d)))}</option>`;
+  }).join('');
+
+  const q = spUI.q.trim().toLowerCase();
+  let shown = views.filter(v =>
+    (!spUI.fStatus || v.statusLabel === spUI.fStatus) && (!spUI.fDate || v.hearingKey === spUI.fDate) &&
+    (!q || (v.c.summons + ' ' + v.c.company + ' ' + v.c.complaint).toLowerCase().includes(q)));
+  const COLS = [
+    { k: 'summons', label: 'Summons #', get: v => v.c.summons },
+    { k: 'company', label: 'Company', get: v => (v.c.company || '').toLowerCase() },
+    { k: 'offense', label: 'Offense / Code', get: v => spOffenseLabel(v) },
+    { k: 'hearing', label: 'Hearing', get: v => v.hearing ? v.hearing.getTime() : Infinity },
+    { k: 'status', label: 'OATH Status', get: v => v.statusLabel },
+    { k: 'result', label: 'Result', get: v => v.o ? v.o.hearingResult : '' },
+    { k: 'penalty', label: 'Penalty', get: v => v.o ? v.o.penalty : -1 },
+    { k: 'paid', label: 'Paid', get: v => v.o ? v.o.paidAmount : -1 },
+    { k: 'balance', label: 'Balance', get: v => (v.o && v.o.balanceDue != null) ? v.o.balanceDue : -1 },
+    { k: 'links', label: 'Links', get: null }
+  ];
+  const sc = COLS.find(c => c.k === spUI.sortKey && c.get) || COLS[3];
+  shown = shown.slice().sort((a, b) => { const x = sc.get(a), y = sc.get(b); return (x < y ? -1 : x > y ? 1 : 0) * spUI.sortDir; });
+  const cLinks = spComplaintLinks(views);
+  const linkCell = v => {
+    const out = [], cl = v.c.directLink || cLinks[v.c.complaint];
+    if(cl) out.push(`<a href="${esc(cl)}" target="_blank" rel="noopener">Complaint</a>`);
+    spPriorLinks(v.c).forEach((p, i) => out.push(p.summons ? `<a href="${esc(spTicketFinderUrl(p.summons))}" target="_blank" rel="noopener" title="${esc(p.text)}">Prior ${i + 1}</a>` : `<span title="${esc(p.text)}">Prior ${i + 1}</span>`));
+    return out.join(' · ') || '—';
+  };
+  document.getElementById('sp-table-tag').textContent = shown.length === views.length ? views.length + ' cases' : shown.length + ' of ' + views.length;
+  document.getElementById('sp-table').innerHTML = '<thead><tr>' + COLS.map(c => c.get
+    ? `<th data-sp-sort="${c.k}">${c.label}${c.k === sc.k ? (spUI.sortDir > 0 ? ' ▲' : ' ▼') : ''}</th>` : `<th>${c.label}</th>`).join('') + '</tr></thead><tbody>' +
+    (shown.map(v => {
+      const o = v.o, sheetKey = v.c.hearingDate ? parseDate(v.c.hearingDate) : null;
+      const moved = o && sheetKey && v.hearing && spDayKey(sheetKey) !== v.hearingKey;
+      return `<tr class="${changed(v) ? 'sp-changed' : ''}">
+        <td>${v.c.summons ? `<a href="${esc(spTicketFinderUrl(v.c.summons))}" target="_blank" rel="noopener">${esc(v.c.summons)}</a>` : esc(v.c.complaint) || '—'}</td>
+        <td>${esc(v.c.company) || '—'}</td><td>${esc(spOffenseLabel(v))}</td>
+        <td>${v.hearing ? esc(fmtDateMDY(v.hearing)) : '—'}${moved ? ` <span title="The sheet says ${esc(v.c.hearingDate)}; OATH has it rescheduled">↻</span>` : ''}</td>
+        <td>${esc(v.statusLabel)}${changed(v) ? '<span class="sp-chg">changed</span>' : ''}</td>
+        <td>${esc(o ? o.hearingResult : '') || '—'}</td>
+        <td>${o ? money(o.penalty) : '—'}</td><td>${o ? money(o.paidAmount) : '—'}</td><td>${o && o.balanceDue != null ? money(o.balanceDue) : '—'}</td>
+        <td>${linkCell(v)}</td></tr>`;
+    }).join('') || `<tr><td colspan="${COLS.length}" class="empty">${views.length ? 'No cases match these filters.' : 'No cases loaded.'}</td></tr>`) + '</tbody>';
+
+  // ---- 3. pipeline board ----
+  const anyProgress = views.some(v => v.c.hasProgress);
+  const STAGES = (anyProgress ? ['Not started', 'Written', 'Mailed', 'Notarized', 'Filed w/ Fedcap'] : ['Awaiting OATH'])
+    .concat(['Hearing', 'Decided', 'Paid', 'Share requested']);
+  document.getElementById('sp-board-tag').textContent = anyProgress ? '' : 'sheet has no Written/Mailed/Notarized/Fedcap columns — earlier steps not tracked';
+  document.getElementById('sp-board').innerHTML = STAGES.map(s => {
+    const cards = views.filter(v => v.stage === s).sort((a, b) => (a.hearing || 0) - (b.hearing || 0));
+    return `<div class="sp-col"><h4><span>${esc(s)}</span><span>${cards.length}</span></h4><div class="sp-cards">` +
+      cards.map(v => `<div class="sp-card"><b>${esc(v.c.company) || esc(v.c.summons)}</b>${esc(v.c.summons)}${v.hearing ? ' · ' + esc(fmtDateMDY(v.hearing)) : ''}</div>`).join('') + '</div></div>';
+  }).join('');
+
+  // ---- 4. payout tracker ----
+  const open = paidViews.filter(v => !v.requested);
+  document.getElementById('sp-payout-tag').textContent = paidViews.length ? money(collected) + ' yours · ' + open.length + ' not yet requested' : '';
+  const me = spMe();
+  document.getElementById('sp-payout').innerHTML = !paidViews.length
+    ? '<div class="empty">No paid cases yet — they\'ll appear here as soon as OATH reports a payment.</div>'
+    : `<div class="search-row"><button class="btn orange" data-sp-copy="payoutall"${open.length ? '' : ' disabled'}>📋 Copy one email for all ${open.length} not yet requested</button>
+        <span class="sp-hint" style="margin:0;">To: ${esc(SP_PAYOUT_EMAIL)} · from ${esc(me.name)}, ${esc(me.address)}</span></div>
+       <div class="table-wrap"><table><thead><tr><th>Summons #</th><th>Company</th><th>Paid</th><th>Your 50%</th><th>Share requested</th><th>Email</th></tr></thead><tbody>` +
+      paidViews.map(v => {
+        const m = spPayoutEmail([v], me);
+        return `<tr><td><a href="${esc(spTicketFinderUrl(v.c.summons))}" target="_blank" rel="noopener">${esc(v.c.summons)}</a></td><td>${esc(v.c.company) || '—'}</td>
+          <td>${money(v.o.paidAmount)}</td><td><b>${money(v.share)}</b></td>
+          <td><label class="check-row"><input type="checkbox" data-sp-share="${esc(v.c.summons)}"${v.requested ? ' checked' : ''}> requested</label></td>
+          <td><button class="btn ghost" data-sp-copy="payout|${esc(v.c.summons)}">📋 Copy</button>
+              <a href="mailto:${esc(m.to)}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}">open in mail</a></td></tr>`;
+      }).join('') + '</tbody></table></div>';
+
+  // ---- 5. deadlines ----
+  const soon = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 3);
+  document.getElementById('sp-deadline-tag').textContent = events.length ? events.length + ' upcoming' : '';
+  document.getElementById('sp-deadlines').innerHTML = !events.length
+    ? '<div class="empty">Nothing upcoming. Deadlines appear here once cases have a hearing date.</div>'
+    : events.map(e => {
+      const kind = e.type === 'clerk' ? '✉ Email clerk' : e.type === 'hearing' ? '⚖ Hearing day' : '⏳ Vacate window ends';
+      const what = e.type === 'clerk' ? `Email <a href="mailto:${esc(SP_CLERK_EMAIL)}">${esc(SP_CLERK_EMAIL)}</a> — ${e.count} case${e.count === 1 ? '' : 's'} for the ${esc(spFmtDay(e.hearing))} hearing`
+        : e.type === 'hearing' ? `${e.count} case${e.count === 1 ? '' : 's'} before OATH`
+        : `${esc(e.view.c.company || '')} · <a href="${esc(spTicketFinderUrl(e.view.c.summons))}" target="_blank" rel="noopener">${esc(e.view.c.summons)}</a> — default can no longer be vacated after this`;
+      const copy = e.type === 'clerk' && e.summons.length ? ` <button class="btn ghost" data-sp-copy="clerk|${spDayKey(e.hearing)}">📋 Copy summons list</button>` : '';
+      return `<div class="sp-dl${e.date <= soon ? ' sp-soon' : ''}"><span class="sp-when">${esc(spFmtDay(e.date))}</span><span class="sp-kind">${kind}</span><span>${what}${copy}</span></div>`;
+    }).join('');
+
+  // ---- 6. hearing-day helper ----
+  const daySel = document.getElementById('sp-day-select');
+  const dayKeys = dates.filter(k => views.some(v => v.hearingKey === k));
+  if(!dayKeys.includes(spUI.day)) spUI.day = dayKeys.find(k => k >= spDayKey(today)) || dayKeys[0] || '';
+  daySel.innerHTML = dayKeys.length ? dayKeys.map(k => {
+    const [y, m, d] = k.split('-').map(Number);
+    return `<option value="${k}"${k === spUI.day ? ' selected' : ''}>${esc(spFmtDay(new Date(y, m - 1, d)))} — ${views.filter(v => v.hearingKey === k).length} cases</option>`;
+  }).join('') : '<option value="">No hearing dates yet</option>';
+  const dayViews = views.filter(v => v.hearingKey === spUI.day);
+  const missing = [];
+  if(dayViews.length){
+    if(!dayViews.some(v => spPlateOf(v.c))) missing.push('Plate');
+    if(!dayViews.some(v => spIdlingWindow(v.c.description))) missing.push('Description');
+    if(!dayViews.some(v => v.c.directLink || v.c.complaint)) missing.push('Complaint #');
+    if(!dayViews.some(v => spPriorLinks(v.c).length)) missing.push('Prior Violation 1 / Prior Violation 2');
+  }
+  document.getElementById('sp-day').innerHTML = !dayViews.length ? '<div class="empty">Pick a hearing date above.</div>' :
+    (missing.length ? `<div class="sp-hint">Not shown yet — add ${missing.map(m => '<b>' + esc(m) + '</b>').join(', ')} column${missing.length === 1 ? '' : 's'} to the Self-Pursue sheet tab to fill these in here.</div>` : '') +
+    dayViews.map(v => {
+      const priors = spPriorLinks(v.c), cl = v.c.directLink || cLinks[v.c.complaint], win = spIdlingWindow(v.c.description), plate = spPlateOf(v.c);
+      const row = (k, val) => val ? `<div><span class="sp-k">${k}</span>${val}</div>` : '';
+      return `<div class="sp-day-card"><h3>${esc(v.c.company) || '—'} · ${v.c.summons ? `<a href="${esc(spTicketFinderUrl(v.c.summons))}" target="_blank" rel="noopener">${esc(v.c.summons)}</a>` : esc(v.c.complaint)}</h3>
+        ${row('OATH status', esc(v.statusLabel) + (v.o && v.o.hearingResult ? ' · ' + esc(v.o.hearingResult) : ''))}
+        ${row('Plate', esc(plate))}${row('Idling window', esc(win))}
+        ${row('Offense', esc(spOffenseLabel(v)) !== '—' ? esc(spOffenseLabel(v)) + (v.c.mailIn ? ' · mail-in ' + esc(v.c.mailIn) : '') : '')}
+        ${row('Complaint', cl ? `<a href="${esc(cl)}" target="_blank" rel="noopener">${esc(v.c.complaint || 'open complaint')}</a>` : esc(v.c.complaint))}
+        ${priors.length ? row('Priors', priors.map(p => p.summons ? `<a href="${esc(spTicketFinderUrl(p.summons))}" target="_blank" rel="noopener">${esc(p.text)}</a>` : esc(p.text)).join('<br><span class="sp-k"></span>')) : ''}
+        ${row('Prior note', esc(v.c.priorNote))}${row('Likely outcome', esc(v.c.likely))}</div>`;
+    }).join('');
+}
+function spWire(){
+  const root = document.getElementById('tab-selfpursue');
+  if(!root) return;
+  root.addEventListener('click', e => {
+    const th = e.target.closest('[data-sp-sort]');
+    if(th){ const k = th.dataset.spSort; spUI.sortDir = spUI.sortKey === k ? -spUI.sortDir : 1; spUI.sortKey = k; renderSelfPursue(); return; }
+    const cp = e.target.closest('[data-sp-copy]');
+    if(cp && !cp.disabled){
+      const [kind, arg] = cp.dataset.spCopy.split('|'), views = spViews();
+      if(kind === 'payout'){ const v = views.find(x => x.c.summons === arg); if(v) spCopy(spEmailText(spPayoutEmail([v], spMe())), cp); }
+      else if(kind === 'payoutall'){ const list = views.filter(v => v.paid && !v.requested); if(list.length) spCopy(spEmailText(spPayoutEmail(list, spMe())), cp); }
+      else if(kind === 'clerk') spCopy(views.filter(v => v.hearingKey === arg && !v.decided && v.c.summons).map(v => v.c.summons).join('\n'), cp);
+      return;
+    }
+    if(e.target.closest('#sp-mark-seen')){ spMarkSeen(); renderSelfPursue(); }
+  });
+  root.addEventListener('change', e => {
+    const t = e.target;
+    if(t.matches('[data-sp-share]')){
+      const map = spLoadJSON(LS_SP_SHARE, {});
+      if(t.checked) map[t.dataset.spShare] = new Date().toISOString(); else delete map[t.dataset.spShare];
+      spSaveJSON(LS_SP_SHARE, map); renderSelfPursue();
+    }
+    else if(t.id === 'sp-filter-status'){ spUI.fStatus = t.value; renderSelfPursue(); }
+    else if(t.id === 'sp-filter-date'){ spUI.fDate = t.value; renderSelfPursue(); }
+    else if(t.id === 'sp-day-select'){ spUI.day = t.value; renderSelfPursue(); }
+  });
+  root.addEventListener('input', e => { if(e.target.id === 'sp-search'){ spUI.q = e.target.value; renderSelfPursue(); } });
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'hidden') spOnLeave(null); });
+  window.addEventListener('pagehide', () => spOnLeave(null));
 }
 
 /* ============================== EXPORT FOR EMAIL (Groups of 8) ============================== */
@@ -3837,6 +4418,7 @@ function renderStats(){
 
 /* ============================== RENDER: DASHBOARD (home) ============================== */
 function goToTab(name){
+  spOnLeave(name);
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   const el = document.getElementById('tab-'+name);
@@ -4076,7 +4658,7 @@ function renderChanges(){
 }
 
 /* ============================== RENDER ALL / TABS ============================== */
-function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); }
+function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); renderSelfPursue(); }
 
 document.getElementById('dash-queue').addEventListener('click', (e) => {
   const item = e.target.closest('[data-goto]');
@@ -4099,6 +4681,7 @@ document.getElementById('cal-grid').addEventListener('click', (e) => {
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    spOnLeave(btn.dataset.tab);
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
     btn.classList.add('active');
@@ -4144,6 +4727,7 @@ document.getElementById('btn-settings').addEventListener('click', ()=>{
   document.getElementById('cfg-gid-requested').value = CFG.gids.requested;
   document.getElementById('cfg-gid-paid').value = CFG.gids.paid;
   document.getElementById('cfg-gid-disqreasons').value = CFG.gids.disqreasons;
+  document.getElementById('cfg-gid-selfpursue').value = CFG.gids.selfpursue || '';
   document.getElementById('cfg-map-mid').value = CFG.mapMid;
   for(const k of ['at','atnyc','mbt']){
     document.getElementById(`cfg-${k}-code`).value = CFG.vendors[k].code;
@@ -4170,7 +4754,8 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
       mbt: document.getElementById('cfg-gid-mbt').value.trim(),
       requested: document.getElementById('cfg-gid-requested').value.trim(),
       paid: document.getElementById('cfg-gid-paid').value.trim(),
-      disqreasons: document.getElementById('cfg-gid-disqreasons').value.trim()
+      disqreasons: document.getElementById('cfg-gid-disqreasons').value.trim(),
+      selfpursue: document.getElementById('cfg-gid-selfpursue').value.trim()
     },
     vendors,
     mapMid: document.getElementById('cfg-map-mid').value.trim() || DEFAULTS.mapMid,
@@ -4183,6 +4768,7 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
 });
 document.getElementById('btn-refresh').addEventListener('click', () => { loadAllData(false); });
 document.getElementById('btn-really-good-refresh').addEventListener('click', runReallyGoodRefresh);
+spWire();
 document.getElementById('btn-clear-cache').addEventListener('click', () => {
   localStorage.removeItem(LS_DATA);
   appData = { merged: [], lastRefresh: null, changeLog: [], lastDiffCount: 0 };
