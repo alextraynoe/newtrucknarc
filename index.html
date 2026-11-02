@@ -784,7 +784,7 @@
     </ul>
 
     <h4>The payout rule</h4>
-    <p>Normally you receive 25% of what NYC collects. <b>But if the paid/violation amount is over $1,000, the payout is capped at a flat $250</b> — this app applies that cap everywhere a payout is estimated or forecasted. Actual historical payouts on already-paid rows always come straight from your "Paid To Me" column, never the formula.</p>
+    <p>Complaints you pursue at OATH yourself (listed on the Self-Pursue tab) pay <b>50%</b> of what's collected, with no cap — they're marked <b>50%</b> next to the payout and every estimate uses that share. Everything else:</p><p>Normally you receive 25% of what NYC collects. <b>But if the paid/violation amount is over $1,000, the payout is capped at a flat $250</b> — this app applies that cap everywhere a payout is estimated or forecasted. Actual historical payouts on already-paid rows always come straight from your "Paid To Me" column, never the formula.</p>
 
     <h4>The Home stat cards</h4>
     <ul>
@@ -1221,9 +1221,16 @@ function numFrom(v){
   const n = parseFloat(String(v).replace(/[^0-9.\-]/g,''));
   return isNaN(n) ? 0 : n;
 }
-function computePayout(amount){
+// Complaints Alex pursues at OATH himself (the Self-Pursue tab) pay 50% of what's collected,
+// not the program's 25%-capped-at-$250 — and they're tagged rec._selfPursue by loadAllData, so
+// every estimate (rec.payout, the grand formula, Calendar, Stats, New Money) picks it up from here.
+// The $250 cap is the CACP's rule for the 25% path; the self-pursue 50% share is uncapped,
+// matching the Self-Pursue tab's own collected-so-far math.
+const SELF_SHARE = 0.5;
+function computePayout(amount, rec){
   amount = Number(amount) || 0;
   if(amount <= 0) return 0;
+  if(rec && rec._selfPursue) return +(amount * SELF_SHARE).toFixed(2);
   if(amount > 1000) return 250; // program cap: flat $250 when the collected amount exceeds $1,000
   return +(amount * 0.25).toFixed(2);
 }
@@ -1235,10 +1242,11 @@ const STANDARD_PAYOUT = 87.5; // 25% of the standard $350 fine — used only whe
 const FINE_BY_OFFENSE = { 1:350, 2:450, 3:600 };
 function detectOffense(desc){
   const d = String(desc||'').toLowerCase();
-  // matches "3rd offense", "third offense", and DEP's standard "3rd or subsequent offense" —
-  // but not street names like "3rd Ave" (the only words allowed between are "or subsequent")
-  if(/(3rd|third)(?:[\s,]+or[\s,]+subsequent)?[\s\-]*offen[cs]e/.test(d)) return 3;
-  if(/(2nd|second)(?:[\s,]+or[\s,]+subsequent)?[\s\-]*offen[cs]e/.test(d)) return 2;
+  // matches "3rd offense", "third offense", DEP's standard "3rd or subsequent offense", and the
+  // slash form "Possible 3rd/subsequent offense" — but not street names like "3rd Ave" (the only
+  // words allowed between are "or"/"/" + "subsequent")
+  if(/(3rd|third)(?:(?:[\s,]+or[\s,]+|\s*\/\s*)subsequent)?[\s\-]*offen[cs]e/.test(d)) return 3;
+  if(/(2nd|second)(?:(?:[\s,]+or[\s,]+|\s*\/\s*)subsequent)?[\s\-]*offen[cs]e/.test(d)) return 2;
   return 1;
 }
 /* Offense tier detection, exact-value only. Ranges misfired: defaulted cases carry inflated
@@ -1624,11 +1632,14 @@ function categorize(rec){
 function expectedPayoutFor(rec){
   const cat = categorize(rec);
   if(cat === 'dead') return 0;
-  if(cat === 'paid') return rec.paidToMe || rec.payout || computePayout(FINE_BY_OFFENSE[rec.offense||1]);
-  const base = computePayout(rec.paidAmount || rec.violationAmount || FINE_BY_OFFENSE[rec.offense||1]);
+  if(cat === 'paid') return rec.paidToMe || rec.payout || computePayout(FINE_BY_OFFENSE[rec.offense||1], rec);
+  const base = computePayout(rec.paidAmount || rec.violationAmount || FINE_BY_OFFENSE[rec.offense||1], rec);
   if(cat === 'requested' || cat === 'pifUnclaimed') return base;
   if(cat === 'defaulted') return base * DEFAULT_COLLECTION;
-  if(cat === 'scheduled') return base * ((SURV && SURV.W != null) ? SURV.W : 0.85);
+  // Build the survival model first, like the open branch below does: reading SURV while it's null
+  // silently used the 0.85 fallback for any scheduled row evaluated before the first open row, so
+  // the total depended on row order right after SURV was reset (a ~$2 wobble on ~$580k).
+  if(cat === 'scheduled'){ if(!SURV) buildSurvival(); return base * ((SURV && SURV.W != null) ? SURV.W : 0.85); }
   const inc = incidentDateOf(rec);
   const age = inc ? (Date.now() - inc.getTime()) / 86400000 : 9999;
   return base * survivalP(age);
@@ -1784,6 +1795,9 @@ async function loadAllData(silent){
   // Self-Pursue: a failed sheet fetch (null) keeps the last cached rows instead of blanking the tab.
   const spPrev = appData.sp || {};
   const spNext = { sheet: spRows || spPrev.sheet || [], oath: spPrev.oath || {}, lastOath: spPrev.lastOath || null, oathError: spPrev.oathError || null };
+  // Complaints Alex pursues himself get the 50% share everywhere (see computePayout). Keyed by
+  // complaint number — the self-served summons isn't on the master sheets.
+  const selfPursueComplaints = new Set(spParseSheet(spNext.sheet).map(c => c.complaint).filter(Boolean));
   // Complaint Number -> specific disqualification reason. Joined by COMPLAINT number:
   // disqualified complaints never get a real summons, so there's nothing else to join on.
   const disqMap = {};
@@ -1831,11 +1845,12 @@ async function loadAllData(silent){
       if(rec.complaintNumber && disqMap[rec.complaintNumber]) rec.disqualReason = disqMap[rec.complaintNumber];
       if(paidMatch){ rec.paidToMe = paidMatch.paidToMe; rec.paidDate = paidMatch.paidDate; }
       if(reqMatch){ rec.requestedDate = reqMatch.requestedDate; }
+      rec._selfPursue = !!rec.complaintNumber && selfPursueComplaints.has(rec.complaintNumber);
       classifyRow(rec);
       rec._block = parseBlock(rec.location);
       rec._hotBlock = hotBlockOf(rec._block) || hotBlockRawOf(rec.location);
       rec.offense = offenseFor(rec);
-      rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+      rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
       merged.push(rec);
     }
   }
@@ -1933,7 +1948,7 @@ function diffAgainstPrevious(merged){
     // in the EGT until the next successful refresh.
     if(!rec.paidAmount && old.paidAmount){
       rec.paidAmount = old.paidAmount;
-      rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+      rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
     }
     if((old.paidAmount||0) !== (rec.paidAmount||0))
       changes.push(Object.assign({type:'payment_amount', before: money(old.paidAmount||0), after: money(rec.paidAmount||0)}, base));
@@ -1987,7 +2002,7 @@ async function enrichFromNYCBatch(batch){
     if(row.total_violation_amount) rec.violationAmount = numFrom(row.total_violation_amount);
     if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
     if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
     rec._liveConfirmed = true; // this row's fields came from an actual NYC check this refresh, not just the sheet's raw column
   }
 }
@@ -2045,7 +2060,7 @@ function carryForwardFailedEnrichment(merged){
     rec.violationAmount = old.violationAmount;
     rec.penaltyImposed = old.penaltyImposed;
     rec.balanceDue = old.balanceDue;
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
   }
 }
 
@@ -2107,7 +2122,7 @@ function reconcilePIFLedger(merged, prev, changeLog){
     rec.hearingStatus = known.status || 'PAID IN FULL';
     if(!rec.paidAmount && known.paidAmount) rec.paidAmount = known.paidAmount;
     if(known.balanceDue != null) rec.balanceDue = known.balanceDue;
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
     classifyRow(rec); rec.offense = offenseFor(rec);
     restored++;
   }
@@ -2232,7 +2247,7 @@ async function runReallyGoodRefresh(){
           if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
           if(detail.balanceDue != null) rec.balanceDue = detail.balanceDue;
           rec._liveConfirmed = true;
-          rec.payout = computePayout(rec.paidAmount || rec.violationAmount);
+          rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
           classifyRow(rec);
           rec.offense = offenseFor(rec);
           updated++;
@@ -2520,7 +2535,7 @@ function computePendingForecasts(){
    NYC's bulk dataset only lists a paper summons weeks after it's filed, so "not in OATH yet"
    is a normal state, not an error. Paid status goes through the Paid-in-Full ledger like every
    other source (see reconcilePIFLedger) — it's a one-way door here too. */
-const SP_SHARE = 0.5;               // user's share of what OATH collects on a self-pursued case
+const SP_SHARE = SELF_SHARE;        // user's share of what OATH collects on a self-pursued case
 const SP_VACATE_DAYS = 75;          // a default can be vacated for 75 days after the decision
 const SP_CLERK_LEAD_BDAYS = 3;      // OATH clerk must be emailed 3 business days before the hearing
 const SP_CLERK_EMAIL = 'remotemanhattan@oath.nyc.gov';
@@ -2815,7 +2830,7 @@ const HOME_COLUMNS = [
   { k:'hearingStatus',   label:'Hearing Status',   extra:false, render:r => esc(r.hearingStatus)||'—' },
   { k:'hearingResult',   label:'Hearing Result',   extra:false, render:r => esc(r.hearingResult)||'—' },
   { k:'paidAmount',      label:'Paid Amt',         extra:false, render:r => money(r.paidAmount) },
-  { k:'payout',          label:'My Payout',        extra:false, render:r => money(r.payout) },
+  { k:'payout',          label:'My Payout',        extra:false, render:r => money(r.payout) + (r._selfPursue ? ' <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span>' : '') },
   { k:'_rowType',        label:'Status',           extra:false, render:r => `<span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>` },
   { k:'dateSubmitted',   label:'Date Submitted',   extra:true,  render:r => esc(r.dateSubmitted)||'—' },
   { k:'licensePlate',    label:'Plate',            extra:true,  render:r => esc(r.licensePlate)||'—' },
@@ -2988,7 +3003,7 @@ function renderNewMoney(){
   const tbody1 = document.querySelector('#newmoney-table tbody');
   tbody1.innerHTML = newMoney.map(r => `
     <tr${r._pifRestoredFrom ? ` title="${esc('A source currently reports "' + r._pifRestoredFrom + '" — kept as Paid in Full because this ticket was confirmed paid earlier.')}"` : ''}><td>${datasetBadge(r.dataset)}</td>
-    <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
+    <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}${r._selfPursue ? ' <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span>' : ''}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
 
   const payLag = getLagModels().payment;
