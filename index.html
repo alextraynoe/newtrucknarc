@@ -170,6 +170,8 @@
   tr.row-nohearing:hover td{background:#c1def8;}
   tr.row-dismissed .badge, tr.row-dismissed .badge.dataset-at, tr.row-dismissed .badge.dataset-atnyc, tr.row-dismissed .badge.dataset-mbt{background:rgba(255,255,255,.25); color:#fff;}
 
+  a.sum-link{color:inherit; text-decoration:underline dotted; text-underline-offset:2px;}
+  a.sum-link:hover{text-decoration:underline solid; color:var(--blue2);}
   .badge{padding:3px 9px; border-radius:20px; font-size:.72em; font-weight:700;}
   .badge.paid{background:rgba(33,138,76,.16); color:var(--success);}
   .badge.requested{background:rgba(176,125,29,.16); color:var(--warn);}
@@ -741,6 +743,10 @@
         <option value="off">Off — use sheet data only</option>
       </select>
     </div>
+    <div class="field">
+      <label>Portal proxy for ⚡ Really Good Refresh <span style="font-weight:400; opacity:.7;">(Apps Script web-app URL — setup steps are at the top of portal-proxy.gs)</span></label>
+      <input type="text" id="cfg-portal-proxy" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
     <div style="display:flex; gap:10px; margin-top:16px;">
       <button class="btn orange" id="btn-save-settings">Save &amp; Refresh</button>
       <button class="btn ghost" id="btn-clear-cache">Clear Cached Data</button>
@@ -846,7 +852,8 @@ const DEFAULTS = {
     mbt:   { code:'VS00099981', name:'Mary Beth Brown-Traynor', address:'97 Ledgewood Dr, Glastonbury, CT 06033' }
   },
   mapMid: '1cy7y1egAwu9Bvmc3oKnuwxLK78BUCRI', // Google My Maps map ID embedded on the Map tab
-  enrich: 'on'
+  enrich: 'on',
+  portalProxy: '' // Apps Script web-app URL (see portal-proxy.gs) that Really Good Refresh uses to reach the ticket portal
 };
 const LS_CFG = 'truckNarcSettings';
 const LS_DATA = 'truckNarcData';
@@ -870,7 +877,8 @@ function loadConfig(){
         mbt:   Object.assign({}, DEFAULTS.vendors.mbt,   (saved.vendors||{}).mbt   || {})
       },
       mapMid: saved.mapMid || DEFAULTS.mapMid,
-      enrich: saved.enrich || DEFAULTS.enrich
+      enrich: saved.enrich || DEFAULTS.enrich,
+      portalProxy: saved.portalProxy || ''
     };
   }catch(e){ return JSON.parse(JSON.stringify(DEFAULTS)); }
 }
@@ -1867,7 +1875,8 @@ async function loadAllData(silent){
 
   if(CFG.enrich !== 'off'){
     // Self-Pursue's one batched OATH lookup runs alongside the main enrichment, same toggle.
-    await Promise.all([enrichFromNYC(merged), spRefreshOath(spNext)]);
+    const enrichProgress = (n, total) => { if(!silent) setStatus(`Checking NYC records… ${n}/${total}`, true); };
+    await Promise.all([enrichFromNYC(merged, enrichProgress), spRefreshOath(spNext)]);
     carryForwardFailedEnrichment(merged);
     // re-classify after enrichment in case hearing_result changed to/from "dismissed",
     // and re-derive offense tiers now that real dollar amounts are in
@@ -1989,7 +1998,9 @@ async function enrichFromNYCBatch(batch){
   // Confirmed live 8/6/2026: summons 000997229N is HTTP 400 on summons_number, but querying
   // ticket_number='000997229N' returns real current data (hearing_status: "PAID IN FULL").
   const url = `https://data.cityofnewyork.us/resource/jz4z-kudi.json?$where=ticket_number in (${list})&$limit=${batch.length}`;
-  const res = await fetch(url);
+  // Bounded: a bare fetch() on a stalled connection (mobile Safari especially, or a backgrounded
+  // tab) never settles, which left "refreshing…" up with the Refresh button disabled for good.
+  const res = await fetchWithTimeout(url, ENRICH_TIMEOUT_MS);
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const apiRows = await res.json();
   for(const row of apiRows){
@@ -2006,43 +2017,58 @@ async function enrichFromNYCBatch(batch){
     rec._liveConfirmed = true; // this row's fields came from an actual NYC check this refresh, not just the sheet's raw column
   }
 }
-async function enrichFromNYC(records){
+/* Socrata's bulk dataset has been slow/flaky for days at a time (6–11s per request, outright 503s),
+   and the ~45 batches used to run strictly one after another with no ceiling — a refresh could take
+   10+ minutes and the Refresh button stayed disabled the whole time. Now: a few batches in flight
+   at once, a per-request timeout, and an overall budget. Batches that don't finish inside the
+   budget are skipped like failed ones — counted in enrichStaleCount and carried forward by
+   carryForwardFailedEnrichment() — instead of holding the whole refresh hostage. */
+const ENRICH_TIMEOUT_MS = 15000;
+const ENRICH_BUDGET_MS = 60000;
+const ENRICH_CONCURRENCY = 4;
+async function enrichFromNYC(records, onProgress){
   enrichStaleCount = 0;
   const withSummons = records.filter(r => r.summons);
   const batchSize = 50;
-  for(let i=0;i<withSummons.length;i+=batchSize){
-    const batch = withSummons.slice(i, i+batchSize);
-    // One retry on failure — a single flaky batch (network blip, Socrata hiccup) used to
-    // silently leave up to 50 rows on stale sheet-cached status for the whole refresh, with
-    // no signal anything was wrong. Confirmed 8/22/2026: summons 000860836H sat stuck on a
-    // stale "HEARING COMPLETED" while NYC's live record already showed "PAID IN FULL" —
-    // which is exactly why "New Money" felt inconsistent refresh to refresh: it wasn't the
-    // real-world data changing, it was enrichment coverage silently varying each time.
-    try{
-      await enrichFromNYCBatch(batch);
-    }catch(e){
-      try{
-        await enrichFromNYCBatch(batch);
-      }catch(e2){
-        console.warn('NYC enrichment batch failed twice (continuing with sheet data)', e2);
+  const batches = [];
+  for(let i=0;i<withSummons.length;i+=batchSize) batches.push(withSummons.slice(i, i+batchSize));
+  const deadline = Date.now() + ENRICH_BUDGET_MS;
+  let next = 0, finished = 0, skipped = 0;
+  async function worker(){
+    while(next < batches.length){
+      const batch = batches[next++];
+      if(Date.now() > deadline){
+        skipped++;
         enrichStaleCount += batch.length;
         for(const rec of batch) rec._enrichFailed = true;
+        continue;
       }
+      // One retry on failure — a single flaky batch (network blip, Socrata hiccup) used to
+      // silently leave up to 50 rows on stale sheet-cached status for the whole refresh, with
+      // no signal anything was wrong. Confirmed 8/22/2026: summons 000860836H sat stuck on a
+      // stale "HEARING COMPLETED" while NYC's live record already showed "PAID IN FULL" —
+      // which is exactly why "New Money" felt inconsistent refresh to refresh: it wasn't the
+      // real-world data changing, it was enrichment coverage silently varying each time.
+      try{
+        await enrichFromNYCBatch(batch);
+      }catch(e){
+        try{
+          if(Date.now() > deadline) throw e;
+          await enrichFromNYCBatch(batch);
+        }catch(e2){
+          console.warn('NYC enrichment batch failed twice (continuing with sheet data)', e2);
+          enrichStaleCount += batch.length;
+          for(const rec of batch) rec._enrichFailed = true;
+        }
+      }
+      finished++;
+      if(onProgress) onProgress(finished + skipped, batches.length);
     }
   }
-  if(enrichStaleCount) console.warn('[enrich]', enrichStaleCount, 'of', withSummons.length, 'rows kept stale sheet data this refresh (NYC batch fetch failed twice)');
+  await Promise.all(Array.from({length: Math.min(ENRICH_CONCURRENCY, batches.length)}, worker));
+  if(skipped) console.warn('[enrich] time budget reached —', skipped, 'of', batches.length, 'batches skipped this refresh');
+  if(enrichStaleCount) console.warn('[enrich]', enrichStaleCount, 'of', withSummons.length, 'rows kept stale sheet data this refresh (NYC batch fetch failed or timed out)');
 }
-// When a row's batch failed enrichment entirely this refresh, `merged` currently holds
-// whatever the SHEET's own raw hearing_status/paid_amount column says — which can be far
-// staler than what live NYC already confirmed on a PAST successful refresh (the sheet's own
-// copy is populated by a separate, slower process). Falling back to it silently un-does a
-// real, already-confirmed fact. Confirmed 8/22/2026: summons 000922319K was correctly caught
-// as paid on one refresh (live enrichment succeeded), then reverted to the sheet's stale
-// "DEFAULTED" on a later refresh when that row's batch failed — exactly the "found it once,
-// gone next time" pattern. Carry forward the last successfully-known fields instead — but
-// ONLY when the old value was itself a confirmed live NYC check (`_liveConfirmed`), never
-// just leftover raw sheet data. A genuine sheet-level edit (the user's own tracking process
-// updating that column) must still win over an older, never-verified sheet snapshot.
 function carryForwardFailedEnrichment(merged){
   const prev = appData.merged || [];
   if(!prev.length) return;
@@ -2172,17 +2198,36 @@ function parsePortalDetail(html){
     hearingResult: resultM ? resultM[1].trim() : null
   };
 }
+/* The portal sets no CORS headers, so the browser can only reach it through a bridge. The public
+   bridges died one by one (11/6/2026: corsproxy.io now answers 401 "valid API key required",
+   codetabs/allorigins time out against the portal), so the primary path is a tiny Google Apps
+   Script web app Alex owns (portal-proxy.gs): `?s=A,B,C` returns {summons: portalHTML|null} for up
+   to PORTAL_PROXY_BATCH summonses per request, fetched in parallel server-side — faster than the
+   one-at-a-time public proxies ever were. Without it configured, the old public chain is still
+   tried per row as a best effort. Returns {summons: detail|null|undefined} (undefined = couldn't
+   reach it at all, null = portal has no record). */
+const PORTAL_PROXY_BATCH = 10;
+function portalUrlFor(summons){
+  return `https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=${encodeURIComponent(summons)}&searchViolationObject.searchType=violationNumber`;
+}
+async function fetchPortalViaProxy(list){
+  const out = {};
+  for(const sm of list) out[sm] = undefined;
+  try{
+    const res = await fetchWithTimeout(CFG.portalProxy + (CFG.portalProxy.includes('?') ? '&' : '?') + 's=' + encodeURIComponent(list.join(',')), 45000);
+    if(!res.ok) return out;
+    const j = JSON.parse(await res.text());
+    for(const sm of list){
+      if(!(sm in j)) continue;
+      out[sm] = j[sm] == null ? undefined : parsePortalDetail(j[sm]);
+    }
+  }catch(e){ /* leave undefined — retried on the next resume */ }
+  return out;
+}
 async function fetchPortalDetail(summons){
-  const url = `https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=${encodeURIComponent(summons)}&searchViolationObject.searchType=violationNumber`;
+  const url = portalUrlFor(summons);
   // No "direct" attempt — confirmed via curl this endpoint sets no CORS headers at all, so a
   // direct browser fetch can never succeed; trying it first would only waste a round trip.
-  // Order and timeout here are NOT the same as fetchCSV's — timed all three proxies live
-  // against this specific endpoint (8/22/2026) and codetabs/allorigins are currently both
-  // broken for it (522 / 408, ~9-20s to fail), while corsproxy.io answers in ~0.2s. Trying
-  // codetabs first (fetchCSV's order) meant every single row burned most of its budget
-  // waiting out a dead proxy before ever reaching the one that works — that was the real
-  // reason a full pass took 10+ minutes, not the per-request work itself. corsproxy.io goes
-  // first here; the other two stay as a safety net in case it has an outage of its own.
   const attempts = [
     () => fetchWithTimeout('https://corsproxy.io/?url=' + encodeURIComponent(url), 6000),
     () => fetchWithTimeout('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url), 6000),
@@ -2197,6 +2242,12 @@ async function fetchPortalDetail(summons){
     }catch(e){ /* try next proxy */ }
   }
   return undefined; // every attempt failed to even load — distinct from null ("no record")
+}
+async function fetchPortalDetails(list){
+  if(CFG.portalProxy) return fetchPortalViaProxy(list);
+  const out = {};
+  await Promise.all(list.map(async sm => { out[sm] = await fetchPortalDetail(sm); }));
+  return out;
 }
 async function runReallyGoodRefresh(){
   const btn = document.getElementById('btn-really-good-refresh');
@@ -2216,8 +2267,20 @@ async function runReallyGoodRefresh(){
     [targets[i], targets[j]] = [targets[j], targets[i]];
   }
 
-  const pifLedger = loadPIFLedger();
+  // Preflight: one summons first. A dead bridge used to burn ~18s per row (every proxy timing out)
+  // before the run finally reported "could not be checked" for everything — say so up front instead.
   btn.disabled = true;
+  setStatus('Really Good Refresh — checking the portal connection…', true);
+  const probe = await fetchPortalDetails([targets[0].summons]);
+  if(probe[targets[0].summons] === undefined){
+    btn.disabled = false;
+    setStatus('Really Good Refresh — portal unreachable', false);
+    alert(CFG.portalProxy
+      ? 'Could not reach the NYC ticket portal through your portal proxy.\n\nCheck the URL in Settings → "Portal proxy" (it should end in /exec) and that the Apps Script web app is deployed with access set to "Anyone".'
+      : 'Really Good Refresh needs a portal proxy.\n\nThe free public proxies it used to rely on no longer work with the NYC ticket portal (corsproxy.io now requires an API key; the others time out).\n\nOne-time fix: open portal-proxy.gs in the project folder, follow the 4 setup steps at the top, then paste the web-app URL into Settings → "Portal proxy".');
+    return;
+  }
+  const pifLedger = loadPIFLedger();
   wrap.classList.add('active');
   let done = 0, updated = 0, failed = 0;
   const updateProgress = () => {
@@ -2226,53 +2289,57 @@ async function runReallyGoodRefresh(){
   };
   updateProgress();
   let idx = 0;
+  const chunkSize = CFG.portalProxy ? PORTAL_PROXY_BATCH : 1;
   async function worker(){
     while(idx < targets.length){
-      const rec = targets[idx++];
-      const detail = await fetchPortalDetail(rec.summons);
-      if(detail === undefined){
-        failed++; // not marked checked — retried on the next resume
-      } else {
-        checkedSet.add(rec.summons);
-        saveRGRProgress([...checkedSet]);
-        // The portal is the strongest evidence there is: a paid-in-full confirmation goes
-        // straight into the ledger (synchronously — localStorage), and a non-paid answer never
-        // downgrades a ticket the ledger already knows is paid.
-        if(detail && detail.status && isPIFText(detail.status) &&
-           recordPIF(pifLedger, rec, 'portal', { status: detail.status, balanceDue: detail.balanceDue })) savePIFLedger(pifLedger);
-        const wouldDowngrade = detail && detail.status && pifLedger[rec.summons] && !isPIFText(detail.status);
-        if(detail && detail.status && !wouldDowngrade && detail.status !== rec.hearingStatus){
-          const beforeStatus = rec.hearingStatus || '—';
-          rec.hearingStatus = detail.status;
-          if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
-          if(detail.balanceDue != null) rec.balanceDue = detail.balanceDue;
-          rec._liveConfirmed = true;
-          rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
-          classifyRow(rec);
-          rec.offense = offenseFor(rec);
-          updated++;
-          appData.changeLog.unshift({ ts: new Date().toISOString(), dataset: rec.dataset, summons: rec.summons, company: rec.company, type:'hearing_status', before: beforeStatus, after: rec.hearingStatus });
-          appData.changeLog = appData.changeLog.slice(0, CHANGE_LOG_CAP);
-          appData.lastDiffCount = (appData.lastDiffCount || 0) + 1;
-          SURV = null;
-          // awaited, not fire-and-forget — if the tab closes right after this fix is found,
-          // the write must have actually landed in IndexedDB already, not just been kicked off
-          await persistCache();
-          // renderAll(), not just renderChanges() — a fix here changes hearingStatus, which
-          // New Money, the Home dashboard totals, and Data table row coloring all depend on.
-          // Confirmed 8/22/2026: rendering only Changes meant a row (e.g. Andres Trucking LLC)
-          // showed up correctly in the Changes log the instant it was fixed, but New Money
-          // kept showing stale content until the whole run finished and finally called
-          // renderAll() — everything should stay visibly in sync as each fix lands, not just
-          // the one tab.
-          renderAll();
+      const chunk = targets.slice(idx, idx + chunkSize); idx += chunk.length;
+      const details = await fetchPortalDetails(chunk.map(r => r.summons));
+      for(const rec of chunk){
+        const detail = details[rec.summons];
+        if(detail === undefined){
+          failed++; // not marked checked — retried on the next resume
+        } else {
+          checkedSet.add(rec.summons);
+          saveRGRProgress([...checkedSet]);
+          // The portal is the strongest evidence there is: a paid-in-full confirmation goes
+          // straight into the ledger (synchronously — localStorage), and a non-paid answer never
+          // downgrades a ticket the ledger already knows is paid.
+          if(detail && detail.status && isPIFText(detail.status) &&
+             recordPIF(pifLedger, rec, 'portal', { status: detail.status, balanceDue: detail.balanceDue })) savePIFLedger(pifLedger);
+          const wouldDowngrade = detail && detail.status && pifLedger[rec.summons] && !isPIFText(detail.status);
+          if(detail && detail.status && !wouldDowngrade && detail.status !== rec.hearingStatus){
+            const beforeStatus = rec.hearingStatus || '—';
+            rec.hearingStatus = detail.status;
+            if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
+            if(detail.balanceDue != null) rec.balanceDue = detail.balanceDue;
+            rec._liveConfirmed = true;
+            rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+            classifyRow(rec);
+            rec.offense = offenseFor(rec);
+            updated++;
+            appData.changeLog.unshift({ ts: new Date().toISOString(), dataset: rec.dataset, summons: rec.summons, company: rec.company, type:'hearing_status', before: beforeStatus, after: rec.hearingStatus });
+            appData.changeLog = appData.changeLog.slice(0, CHANGE_LOG_CAP);
+            appData.lastDiffCount = (appData.lastDiffCount || 0) + 1;
+            SURV = null;
+            // awaited, not fire-and-forget — if the tab closes right after this fix is found,
+            // the write must have actually landed in IndexedDB already, not just been kicked off
+            await persistCache();
+            // renderAll(), not just renderChanges() — a fix here changes hearingStatus, which
+            // New Money, the Home dashboard totals, and Data table row coloring all depend on.
+            // Confirmed 8/22/2026: rendering only Changes meant a row (e.g. Andres Trucking LLC)
+            // showed up correctly in the Changes log the instant it was fixed, but New Money
+            // kept showing stale content until the whole run finished and finally called
+            // renderAll() — everything should stay visibly in sync as each fix lands, not just
+            // the one tab.
+            renderAll();
+          }
         }
+        done++;
+        updateProgress();
       }
-      done++;
-      updateProgress();
     }
   }
-  await Promise.all(Array.from({length: Math.min(PORTAL_CONCURRENCY, targets.length)}, worker));
+  await Promise.all(Array.from({length: Math.min(CFG.portalProxy ? 3 : PORTAL_CONCURRENCY, Math.ceil(targets.length / chunkSize))}, worker));
 
   if(checkedSet.size >= allTargets.length) saveRGRProgress([]); // full pass done — reset for next time
   const leftForNextTime = allTargets.length - checkedSet.size;
@@ -2281,7 +2348,7 @@ async function runReallyGoodRefresh(){
   wrap.classList.remove('active');
   persistCache();
   renderAll();
-  setStatus('Really Good Refresh complete', false);
+  setStatus(failed >= done && done ? 'Really Good Refresh — nothing could be checked' : 'Really Good Refresh complete', false);
   alert(`Checked ${done} rows against the live NYC portal${leftForNextTime > 0 ? ` (${leftForNextTime} left for next time)` : ' — full pass complete'}.\n${updated} were actually already resolved — totals updated.${failed ? '\n' + failed + ' could not be checked (network issue) — they\'ll retry next run.' : ''}`);
 }
 
@@ -2553,6 +2620,14 @@ function spTicketFinderUrl(s){
   return 'https://a820-ecbticketfinder.nyc.gov/getViolationbyID.action?searchViolationObject.violationNo=' +
     encodeURIComponent(s) + '&searchViolationObject.searchType=violationNumber&submit=Search';
 }
+// Every summons number shown in the app is a link to that ticket on the OATH/ECB ticket finder.
+// Blank summons (a complaint DEP hasn't issued one for yet) render as the fallback text, unlinked.
+// stopPropagation so a link inside a clickable row/card doesn't also trigger the row's own handler.
+function summonsLink(s, fallback){
+  s = String(s || '').trim();
+  if(!s) return esc(fallback || '');
+  return `<a class="sum-link" href="${esc(spTicketFinderUrl(s))}" target="_blank" rel="noopener" title="View ticket ${esc(s)} on NYC's ticket finder" onclick="event.stopPropagation()">${esc(s)}</a>`;
+}
 function spOathUrl(sums){
   // ONE request for every summons. No $select on purpose: naming a column the dataset doesn't
   // have (e.g. date_judgment_docketed) is an HTTP 400 for the whole batch.
@@ -2802,7 +2877,7 @@ const HOME_COLUMNS = [
     } },
   { k:'complaintNumber', label:'Complaint #',      extra:false, render:r => complaintCell(r) },
   { k:'dataset',         label:'Dataset',          extra:false, render:r => datasetBadge(r.dataset) },
-  { k:'summons',         label:'Summons #',        extra:false, render:r => esc(r.summons)||'—' },
+  { k:'summons',         label:'Summons #',        extra:false, render:r => summonsLink(r.summons)||'—' },
   { k:'company',         label:'Company',          extra:false, render:r => {
       const c = r.company || '';
       if(!c) return '—';
@@ -3003,7 +3078,7 @@ function renderNewMoney(){
   const tbody1 = document.querySelector('#newmoney-table tbody');
   tbody1.innerHTML = newMoney.map(r => `
     <tr${r._pifRestoredFrom ? ` title="${esc('A source currently reports "' + r._pifRestoredFrom + '" — kept as Paid in Full because this ticket was confirmed paid earlier.')}"` : ''}><td>${datasetBadge(r.dataset)}</td>
-    <td>${esc(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}${r._selfPursue ? ' <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span>' : ''}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
+    <td>${summonsLink(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}${r._selfPursue ? ' <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span>' : ''}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
 
   const payLag = getLagModels().payment;
@@ -3032,7 +3107,7 @@ function renderNewMoney(){
       }
     }
     return `<tr><td>${datasetBadge(r.dataset)}</td>
-      <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${esc(r.requestedDate)||'—'}</td>
+      <td>${summonsLink(r.summons)}</td><td>${esc(r.company)}</td><td>${esc(r.requestedDate)||'—'}</td>
       <td>${money(r._expected)}</td>
       <td>${r._daysWaiting>=0 ? r._daysWaiting : '—'}</td>
       <td>${forecastCell}</td></tr>`;
@@ -3207,7 +3282,7 @@ function renderSelfPursue(){
   document.getElementById('sp-board').innerHTML = STAGES.map(s => {
     const cards = views.filter(v => v.stage === s).sort((a, b) => (a.hearing || 0) - (b.hearing || 0));
     return `<div class="sp-col"><h4><span>${esc(s)}</span><span>${cards.length}</span></h4><div class="sp-cards">` +
-      cards.map(v => `<div class="sp-card"><b>${esc(v.c.company) || esc(v.c.summons)}</b>${esc(v.c.summons)}${v.hearing ? ' · ' + esc(fmtDateMDY(v.hearing)) : ''}</div>`).join('') + '</div></div>';
+      cards.map(v => `<div class="sp-card"><b>${esc(v.c.company) || esc(v.c.summons)}</b>${summonsLink(v.c.summons)}${v.hearing ? ' · ' + esc(fmtDateMDY(v.hearing)) : ''}</div>`).join('') + '</div></div>';
   }).join('');
 
   // ---- 4. payout tracker ----
@@ -3385,7 +3460,7 @@ function renderDiscrepancies(){
   document.getElementById('disc-count').textContent = flagged.length + ' flagged';
   document.querySelector('#disc-table tbody').innerHTML = flagged.map(r => `
     <tr><td>${datasetBadge(r.dataset)}</td>
-    <td>${esc(r.summons)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td>
+    <td>${summonsLink(r.summons)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td>
     <td>${esc(r.hearingStatus)||'—'}</td><td>${esc(r.complianceStatus)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="6" class="empty">Nothing to reconcile — clean.</td></tr>`;
 
@@ -3399,7 +3474,7 @@ function renderTimestampAnomalies(){
     const days = Math.floor(x.impliedMin/1440), hrs = Math.floor((x.impliedMin%1440)/60), mins = Math.round(x.impliedMin%60);
     const durStr = (days?days+'d ':'') + (hrs?hrs+'h ':'') + mins+'m';
     return `<tr><td>${datasetBadge(r.dataset)}</td>
-      <td>${esc(r.summons)||'—'}</td><td>${complaintCell(r)}</td>
+      <td>${summonsLink(r.summons)||'—'}</td><td>${complaintCell(r)}</td>
       <td>${x.from.toLocaleString()}</td><td>${esc(r.clipTo)}</td><td>${durStr}</td></tr>`;
   }).join('') || `<tr><td colspan="6" class="empty">No timestamp anomalies found — clean.</td></tr>`;
 }
@@ -3594,7 +3669,7 @@ function renderDayMap(entries){
       L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: '<div class="map-pin">' + (idx+1) + '</div>', iconSize: [22,22], iconAnchor: [11,11] }) })
         .addTo(calMap)
         .bindPopup('<b>' + esc(p.e.from.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})) + '</b> · ' + esc(r.company) + '<br>' +
-                   esc(r.summons || ('Complaint ' + r.complaintNumber)) + ' · ' + bucketLabel(r._rowType) +
+                   summonsLink(r.summons, 'Complaint ' + r.complaintNumber) + ' · ' + bucketLabel(r._rowType) +
                    (r.location ? '<br><span style="color:#777;">' + esc(r.location) + '</span>' : ''));
     });
     calMap.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])).pad(0.25));
@@ -3885,7 +3960,7 @@ function renderCalendar(){
             ${datasetBadge(r.dataset)}
             <span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>
             ${r.offense>1?`<span class="badge disq">${r.offense===2?'2nd':'3rd'} offense</span>`:''}
-            <b>${esc(r.summons || ('Complaint ' + r.complaintNumber))}</b> · ${esc(r.company)}
+            <b>${summonsLink(r.summons, 'Complaint ' + r.complaintNumber)}</b> · ${esc(r.company)}
             <span class="delta"> — est ${money(expectedPayoutFor(r))}${calReceivedFor(r)?', received '+money(calReceivedFor(r)):''}</span>
           </div>
         </div>`;
@@ -4307,7 +4382,7 @@ function renderStats(){
     const shortest = paidDurations.reduce((a,b)=>a.days<=b.days?a:b);
     const longest = paidDurations.reduce((a,b)=>a.days>=b.days?a:b);
     const avgDays = paidDurations.reduce((s,x)=>s+x.days,0)/paidDurations.length;
-    const desc = x => `${esc(x.r.summons||('Complaint '+x.r.complaintNumber))} · ${esc(x.r.company)}`;
+    const desc = x => `${summonsLink(x.r.summons, 'Complaint '+x.r.complaintNumber)} · ${esc(x.r.company)}`;
     document.getElementById('stats-timetopay').innerHTML = `<div class="grid" style="margin-bottom:0;">
         <div class="stat-card"><div class="label">Shortest</div><div class="value success" style="font-size:1.15em;">${humanizeDays(shortest.days)}</div><div class="sub">${desc(shortest)}</div></div>
         <div class="stat-card"><div class="label">Average</div><div class="value blue" style="font-size:1.15em;">${humanizeDays(avgDays)}</div><div class="sub">${paidDurations.length.toLocaleString()} paid rows with a valid incident→payment gap</div></div>
@@ -4577,7 +4652,7 @@ function renderDashboard(){
     <div class="chg-item" style="padding:7px 4px;">
       <div class="when" style="min-width:96px;">${new Date(c.ts).toLocaleDateString()}</div>
       <div class="what"><span class="badge chg-${c.type}">${CHANGE_LABELS[c.type]||c.type}</span>
-        <b>${esc(c.summons)}</b> · ${esc((c.company||'').slice(0,26))}
+        <b>${summonsLink(c.summons)}</b> · ${esc((c.company||'').slice(0,26))}
         ${c.type==='new'?'':`<div class="delta">${esc(c.before)} → <b>${esc(c.after)}</b></div>`}</div>
     </div>`).join('') || '<div class="empty">No changes logged yet.</div>';
 
@@ -4680,7 +4755,7 @@ function renderChanges(){
       <div class="what">
         <span class="badge chg-${c.type}">${CHANGE_LABELS[c.type]||c.type}</span>
         ${datasetBadge(c.dataset)}
-        <b>${esc(c.summons)}</b> · ${esc(c.company)}
+        <b>${summonsLink(c.summons)}</b> · ${esc(c.company)}
         ${c.type==='new'
           ? `<div class="delta">Newly appeared in the sheet.</div>`
           : `<div class="delta">${esc(c.before)} → <b>${esc(c.after)}</b></div>`}
@@ -4767,6 +4842,7 @@ document.getElementById('btn-settings').addEventListener('click', ()=>{
     document.getElementById(`cfg-${k}-address`).value = CFG.vendors[k].address;
   }
   document.getElementById('cfg-enrich').value = CFG.enrich;
+  document.getElementById('cfg-portal-proxy').value = CFG.portalProxy || '';
   openModal('settings-overlay');
 });
 document.getElementById('btn-save-settings').addEventListener('click', () => {
@@ -4791,14 +4867,17 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
     },
     vendors,
     mapMid: document.getElementById('cfg-map-mid').value.trim() || DEFAULTS.mapMid,
-    enrich: document.getElementById('cfg-enrich').value
+    enrich: document.getElementById('cfg-enrich').value,
+    portalProxy: document.getElementById('cfg-portal-proxy').value.trim()
   };
   saveConfig(CFG);
   closeModal('settings-overlay');
   renderMapEmbed();
   loadAllData(false);
 });
-document.getElementById('btn-refresh').addEventListener('click', () => { loadAllData(false); });
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  loadAllData(false).catch(e => { console.error(e); setStatus('Refresh failed — showing last known data', false); });
+});
 document.getElementById('btn-really-good-refresh').addEventListener('click', runReallyGoodRefresh);
 spWire();
 document.getElementById('btn-clear-cache').addEventListener('click', () => {
