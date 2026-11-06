@@ -170,8 +170,9 @@
   tr.row-nohearing:hover td{background:#c1def8;}
   tr.row-dismissed .badge, tr.row-dismissed .badge.dataset-at, tr.row-dismissed .badge.dataset-atnyc, tr.row-dismissed .badge.dataset-mbt{background:rgba(255,255,255,.25); color:#fff;}
 
-  a.sum-link{color:inherit; text-decoration:underline dotted; text-underline-offset:2px;}
-  a.sum-link:hover{text-decoration:underline solid; color:var(--blue2);}
+  a.sum-link{color:var(--blue2); font-weight:600; text-decoration:underline; text-underline-offset:2px;}
+  a.sum-link:hover{color:var(--orange2);}
+  tr.row-dismissed a.sum-link{color:#fff;}
   .badge{padding:3px 9px; border-radius:20px; font-size:.72em; font-weight:700;}
   .badge.paid{background:rgba(33,138,76,.16); color:var(--success);}
   .badge.requested{background:rgba(176,125,29,.16); color:var(--warn);}
@@ -853,7 +854,7 @@ const DEFAULTS = {
   },
   mapMid: '1cy7y1egAwu9Bvmc3oKnuwxLK78BUCRI', // Google My Maps map ID embedded on the Map tab
   enrich: 'on',
-  portalProxy: '' // Apps Script web-app URL (see portal-proxy.gs) that Really Good Refresh uses to reach the ticket portal
+  portalProxy: 'https://script.google.com/macros/s/AKfycbxqGWEdBAjnjZTWJSrgWzXcvvK9jWnpCILUxJussc0-UWjhSeOxKvrnsqzC9zLt4WD-/exec' // Alex's Apps Script web app (portal-proxy.gs) that Really Good Refresh uses to reach the ticket portal; Settings can override it, or enter "off" to skip it
 };
 const LS_CFG = 'truckNarcSettings';
 const LS_DATA = 'truckNarcData';
@@ -878,7 +879,7 @@ function loadConfig(){
       },
       mapMid: saved.mapMid || DEFAULTS.mapMid,
       enrich: saved.enrich || DEFAULTS.enrich,
-      portalProxy: saved.portalProxy || ''
+      portalProxy: saved.portalProxy === 'off' ? '' : (saved.portalProxy || DEFAULTS.portalProxy)
     };
   }catch(e){ return JSON.parse(JSON.stringify(DEFAULTS)); }
 }
@@ -4842,7 +4843,7 @@ document.getElementById('btn-settings').addEventListener('click', ()=>{
     document.getElementById(`cfg-${k}-address`).value = CFG.vendors[k].address;
   }
   document.getElementById('cfg-enrich').value = CFG.enrich;
-  document.getElementById('cfg-portal-proxy').value = CFG.portalProxy || '';
+  document.getElementById('cfg-portal-proxy').value = CFG.portalProxy || 'off';
   openModal('settings-overlay');
 });
 document.getElementById('btn-save-settings').addEventListener('click', () => {
@@ -4868,9 +4869,10 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
     vendors,
     mapMid: document.getElementById('cfg-map-mid').value.trim() || DEFAULTS.mapMid,
     enrich: document.getElementById('cfg-enrich').value,
-    portalProxy: document.getElementById('cfg-portal-proxy').value.trim()
+    portalProxy: document.getElementById('cfg-portal-proxy').value.trim() || DEFAULTS.portalProxy
   };
   saveConfig(CFG);
+  CFG.portalProxy = loadConfig().portalProxy; // "off" is stored as typed but means no proxy at runtime
   closeModal('settings-overlay');
   renderMapEmbed();
   loadAllData(false);
