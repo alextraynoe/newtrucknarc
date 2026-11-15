@@ -102,13 +102,13 @@
   .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:18px;}
   /* Calendar's stat row has 7 cards — pin to exactly 7 columns so it never wraps to a second
      line, instead of auto-fit dropping to fewer columns when the viewport is narrower. */
-  #cal-stats{grid-template-columns:repeat(7,1fr); gap:8px;}
-  #cal-stats .stat-card{padding:10px 10px;}
-  #cal-stats .stat-card .value{font-size:1.2em;}
-  #cal-stats .stat-card .label{font-size:.66em;}
-  #cal-stats .stat-card .sub{font-size:.66em;}
-  @media (max-width:1100px){ #cal-stats{grid-template-columns:repeat(4,1fr);} }
-  @media (max-width:640px){ #cal-stats{grid-template-columns:repeat(2,1fr);} }
+  #cal-stats, #cal-ytd-stats{grid-template-columns:repeat(7,1fr); gap:8px;}
+  #cal-stats .stat-card, #cal-ytd-stats .stat-card{padding:10px 10px;}
+  #cal-stats .stat-card .value, #cal-ytd-stats .stat-card .value{font-size:1.2em;}
+  #cal-stats .stat-card .label, #cal-ytd-stats .stat-card .label{font-size:.66em;}
+  #cal-stats .stat-card .sub, #cal-ytd-stats .stat-card .sub{font-size:.66em;}
+  @media (max-width:1100px){ #cal-stats, #cal-ytd-stats{grid-template-columns:repeat(4,1fr);} }
+  @media (max-width:640px){ #cal-stats, #cal-ytd-stats{grid-template-columns:repeat(2,1fr);} }
   .stat-card{
     background:var(--panel); border:1px solid var(--border); border-radius:var(--radius);
     padding:14px 16px; box-shadow:var(--shadow);
@@ -493,6 +493,10 @@
       <div class="cal-grid with-totals" id="cal-grid" style="margin-top:6px;"></div>
       <div class="weekday-avg" id="cal-weekday-avg"></div>
       <div class="cal-drill" id="cal-drill" style="display:none;"></div>
+    </div>
+    <div class="panel" id="cal-ytd-panel">
+      <h2>Year to Date <span class="tag" id="cal-ytd-label"></span></h2>
+      <div class="grid" id="cal-ytd-stats" style="margin-bottom:0;"></div>
     </div>
   </section>
 
@@ -3761,6 +3765,40 @@ function renderStatsAnnualIncome(){
     ((beyond > 0.5 || undated > 0.5) ? `<p class="note">${beyond>0.5?`${money(beyond)} projected beyond ${years[years.length-1]}. `:''}${undated>0.5?`${money(undated)} has no incident date to project from.`:''}</p>` : '');
 }
 
+/* One period's worth of the Calendar's stat cards (a month, or the year to date). `inPeriod(key)` picks
+   which day keys count; dayStats is also what the month grid colors its cells from. */
+function calPeriodStats(byDay, inPeriod){
+  const P = { dayStats: {}, hours: 0, est: 0, received: 0, filings: 0, overtime: 0 };
+  for(const key of Object.keys(byDay)){
+    if(!inPeriod(key)) continue;
+    const entries = byDay[key];
+    const { main, overtime } = splitAfterHours(entries);
+    const hours = inferHours(main);
+    const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
+    const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
+    P.dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length };
+    P.hours += hours; P.est += est; P.received += received; P.filings += entries.length; P.overtime += overtime.length;
+  }
+  P.activeDayKeys = Object.keys(P.dayStats).filter(k => !isWeekendKey(k));
+  const qualifying = P.activeDayKeys.filter(k => P.dayStats[k].count > 3);
+  P.avgTrucksPerDay = qualifying.length ? qualifying.reduce((s,k)=>s+P.dayStats[k].count,0)/qualifying.length : null;
+  const rateDays = qualifying.filter(k => P.dayStats[k].hours > 0);
+  P.avgHourlyRate = rateDays.length ? rateDays.reduce((s,k)=>s+P.dayStats[k].est/P.dayStats[k].hours,0)/rateDays.length : null;
+  return P;
+}
+// `ly` = the same period a year earlier ({filings, received}); `word` = "Month" | "Year".
+function calStatCardsHTML(P, ly, lyLabel, word){
+  return `
+    <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${P.filings}</div><div class="sub">vs ${ly.filings} in ${lyLabel}</div></div>
+    <div class="stat-card"><div class="label">Active Days</div><div class="value blue">${P.activeDayKeys.length}</div><div class="sub">weekdays only</div></div>
+    <div class="stat-card"><div class="label">Hours Worked</div><div class="value blue">${P.hours.toFixed(1)}</div><div class="sub">main shift only${P.overtime?` · ${P.overtime} overtime trucks`:''}</div></div>
+    <div class="stat-card"><div class="label">Avg Trucks / Day Worked</div><div class="value blue">${P.avgTrucksPerDay!=null?P.avgTrucksPerDay.toFixed(1):'—'}</div><div class="sub">weekdays with 4+ trucks only</div></div>
+    <div class="stat-card"><div class="label">Avg Hourly Rate</div><div class="value orange">${P.avgHourlyRate!=null?'$'+P.avgHourlyRate.toFixed(0)+'/hr':'—'}</div><div class="sub">estimated payout ÷ hours, same days</div></div>
+    <div class="stat-card"><div class="label">Estimated From ${word}</div><div class="value orange">${money(P.est)}</div><div class="sub">offense-aware expected payouts</div></div>
+    <div class="stat-card"><div class="label">Received So Far</div><div class="value success">${money(P.received)}</div><div class="sub">incl. requested (as good as paid) · vs ${money(ly.received)} in ${lyLabel} · ${P.est>0 ? (P.received/P.est*100).toFixed(0)+'% of est.' : '—'}</div></div>
+  `;
+}
+
 function renderCalendar(){
   const dsFilter = document.getElementById('cal-filter-dataset').value;
   let rows = appData.merged.slice();
@@ -3784,23 +3822,13 @@ function renderCalendar(){
   const monthPrefix = y + '-' + String(m+1).padStart(2,'0');
   const lastYearPrefix = (y-1) + '-' + String(m+1).padStart(2,'0');
 
-  const dayStats = {};
-  let monthHours = 0, monthEst = 0, monthReceived = 0, monthFilings = 0, monthOvertime = 0;
-  let lyReceived = 0, lyFilings = 0;
-  for(const key of Object.keys(byDayAll)){
-    const entries = byDayAll[key];
-    if(key.startsWith(lastYearPrefix)){
-      lyFilings += entries.length;
-      lyReceived += entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
-    }
-    if(!key.startsWith(monthPrefix)) continue;
-    const { main, overtime } = splitAfterHours(entries);
-    const hours = inferHours(main);
-    const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
-    const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
-    dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length };
-    monthHours += hours; monthEst += est; monthReceived += received; monthFilings += entries.length; monthOvertime += overtime.length;
-  }
+  const lastYearKeys = Object.keys(byDayAll).filter(k => k.startsWith(lastYearPrefix));
+  const ly = {
+    filings: lastYearKeys.reduce((n,k)=>n+byDayAll[k].length,0),
+    received: lastYearKeys.reduce((n,k)=>n+byDayAll[k].reduce((s2,x)=>s2+calReceivedFor(x.rec),0),0)
+  };
+  const MP = calPeriodStats(byDayAll, k => k.startsWith(monthPrefix));
+  const dayStats = MP.dayStats;
 
   document.getElementById('cal-label').textContent = calCursor.toLocaleString(undefined,{month:'long', year:'numeric'});
   // month/year dropdowns — jump anywhere in one click; year range spans the data
@@ -3813,20 +3841,22 @@ function renderCalendar(){
   for(let yy=maxY; yy>=minY; yy--) yOpts += `<option value="${yy}"${yy===y?' selected':''}>${yy}</option>`;
   yearSel.innerHTML = yOpts;
   const lyLabel = calCursor.toLocaleString(undefined,{month:'short'}) + ' ' + (y-1);
-  const activeDayKeys = Object.keys(dayStats).filter(k => !isWeekendKey(k));
-  const qualifyingDayKeys = activeDayKeys.filter(k => dayStats[k].count > 3);
-  const avgTrucksPerDay = qualifyingDayKeys.length ? qualifyingDayKeys.reduce((s,k)=>s+dayStats[k].count,0)/qualifyingDayKeys.length : null;
-  const rateDays = qualifyingDayKeys.filter(k => dayStats[k].hours > 0);
-  const avgHourlyRate = rateDays.length ? rateDays.reduce((s,k)=>s+dayStats[k].est/dayStats[k].hours,0)/rateDays.length : null;
-  document.getElementById('cal-stats').innerHTML = `
-    <div class="stat-card"><div class="label">Incidents</div><div class="value blue">${monthFilings}</div><div class="sub">vs ${lyFilings} in ${lyLabel}</div></div>
-    <div class="stat-card"><div class="label">Active Days</div><div class="value blue">${activeDayKeys.length}</div><div class="sub">weekdays only</div></div>
-    <div class="stat-card"><div class="label">Hours Worked</div><div class="value blue">${monthHours.toFixed(1)}</div><div class="sub">main shift only${monthOvertime?` · ${monthOvertime} overtime trucks`:''}</div></div>
-    <div class="stat-card"><div class="label">Avg Trucks / Day Worked</div><div class="value blue">${avgTrucksPerDay!=null?avgTrucksPerDay.toFixed(1):'—'}</div><div class="sub">weekdays with 4+ trucks only</div></div>
-    <div class="stat-card"><div class="label">Avg Hourly Rate</div><div class="value orange">${avgHourlyRate!=null?'$'+avgHourlyRate.toFixed(0)+'/hr':'—'}</div><div class="sub">estimated payout ÷ hours, same days</div></div>
-    <div class="stat-card"><div class="label">Estimated From Month</div><div class="value orange">${money(monthEst)}</div><div class="sub">offense-aware expected payouts</div></div>
-    <div class="stat-card"><div class="label">Received So Far</div><div class="value success">${money(monthReceived)}</div><div class="sub">incl. requested (as good as paid) · vs ${money(lyReceived)} in ${lyLabel} · ${monthEst>0 ? (monthReceived/monthEst*100).toFixed(0)+'% of est.' : '—'}</div></div>
-  `;
+  document.getElementById('cal-stats').innerHTML = calStatCardsHTML(MP, ly, lyLabel, 'Month');
+
+  // Year to date for whatever year the calendar is on — through today for the current year, the whole
+  // year for a past one — against the same stretch of the year before.
+  const todayKey = localDayKey(new Date());
+  const curYear = +todayKey.slice(0,4);
+  const upToToday = (k, yr) => k.slice(0,4) === String(yr) && (yr < curYear || k.slice(5) <= todayKey.slice(5));
+  const YP = calPeriodStats(byDayAll, k => upToToday(k, y));
+  const lyYtdKeys = Object.keys(byDayAll).filter(k => upToToday(k, y-1));
+  const lyYtd = {
+    filings: lyYtdKeys.reduce((n,k)=>n+byDayAll[k].length,0),
+    received: lyYtdKeys.reduce((n,k)=>n+byDayAll[k].reduce((s2,x)=>s2+calReceivedFor(x.rec),0),0)
+  };
+  const ytdThrough = y < curYear ? 'full year' : 'Jan 1 – ' + new Date(y, +todayKey.slice(5,7)-1, +todayKey.slice(8,10)).toLocaleString(undefined,{month:'short', day:'numeric'});
+  document.getElementById('cal-ytd-label').textContent = y + ' · ' + ytdThrough;
+  document.getElementById('cal-ytd-stats').innerHTML = calStatCardsHTML(YP, lyYtd, y < curYear ? String(y-1) : 'YTD ' + (y-1), 'Year');
 
   const heads = document.getElementById('cal-heads');
   heads.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('') + '<div class="cal-head">Week</div>';
