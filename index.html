@@ -795,7 +795,7 @@
     </ul>
 
     <h4>The payout rule</h4>
-    <p>Complaints you pursue at OATH yourself (listed on the Self-Pursue tab) pay <b>50%</b> of what's collected, with no cap — they're marked <b>50%</b> next to the payout and every estimate uses that share. Everything else:</p><p>Normally you receive 25% of what NYC collects. <b>But if the paid/violation amount is over $1,000, the payout is capped at a flat $250</b> — this app applies that cap everywhere a payout is estimated or forecasted. Actual historical payouts on already-paid rows always come straight from your "Paid To Me" column, never the formula.</p>
+    <p>Complaints you pursue at OATH yourself (listed on the Self-Pursue tab) pay <b>50%</b> of the penalty collected — they're marked <b>50%</b> next to the payout and every estimate uses that share. Everything else:</p><p>You receive <b>25% of the penalty NYC imposes — not the late fees</b>. A ticket paid on its merits carries the normal fine (1st $350, 2nd $440, 3rd $600 → $87.50 / $110 / $150). If the respondent <b>defaults</b>, the penalty jumps to <b>$1,000 / $1,500 / $2,000</b> and your share to <b>$250 / $375 / $500</b>; late fees on top of that aren't shared. The app values every row on that basis — a defaulted row that hasn't been collected yet counts at its default-penalty payout (× the collection odds), not at the original fine. Actual historical payouts on already-paid rows always come straight from your "Paid To Me" column, never the formula.</p>
 
     <h4>The Home stat cards</h4>
     <ul>
@@ -814,7 +814,7 @@
     <p>There's no real clock-in data, so hours are inferred from clip timestamps: a gap of 1.5 hours or more between two clips starts a new "shift." Each shift is padded 30 minutes on either end. Only <b>main-shift</b> sightings (weekdays, 5am-6pm) count toward hours — anything on a weekend or before 5am/after 6pm is pulled out and counted separately as an "overtime truck" instead of being time-clustered. Hourly rate = that day's <b>estimated</b> payout ÷ that day's main-shift hours. A handful of source rows have a corrupted clip end-time (a date typo, an AM/PM flip); anything implying more than an hour for a single clip is treated as unreliable for hours math and surfaced in New Money as worth double-checking with DEP, rather than allowed to silently inflate a day's hours.</p>
 
     <h4>Offense tiers</h4>
-    <p>The Description column is scanned for "2nd offense" / "second offense" / "3rd offense" etc. Repeat offenses raise the fine ($350 / $450 / $600), and all expected-payout estimates use the right tier. First offense is assumed when nothing is mentioned.</p>
+    <p>The Description column is scanned for "2nd offense" / "second offense" / "3rd offense" etc. Repeat offenses raise the fine ($350 / $440 / $600), and all expected-payout estimates use the right tier. First offense is assumed when nothing is mentioned.</p>
 
     <h4>Incident time, not submission time</h4>
     <p>The calendar and all Stats group by when the violation actually <b>occurred</b> (the clip's From timestamp), falling back to the submission date for old rows without one. The estimated-hearing-date model only trusts months where a majority of filings have actually been reviewed — the few early returns from a mostly-unreviewed month are biased fast and are ignored.</p>
@@ -1234,25 +1234,63 @@ function numFrom(v){
   const n = parseFloat(String(v).replace(/[^0-9.\-]/g,''));
   return isNaN(n) ? 0 : n;
 }
-// Complaints Alex pursues at OATH himself (the Self-Pursue tab) pay 50% of what's collected,
-// not the program's 25%-capped-at-$250 — and they're tagged rec._selfPursue by loadAllData, so
-// every estimate (rec.payout, the grand formula, Calendar, Stats, New Money) picks it up from here.
-// The $250 cap is the CACP's rule for the 25% path; the self-pursue 50% share is uncapped,
-// matching the Self-Pursue tab's own collected-so-far math.
+/* THE PAYOUT RULE (corrected 11/25/2026). Alex receives 25% of the PENALTY NYC imposes — never of the
+   late fees — and there is no flat cap: what limits it is the penalty itself. A ticket that is paid
+   on its merits carries the normal fine (1st $350 / 2nd $440 / 3rd $600 → $87.50 / $110 / $150); one
+   that defaults jumps to the default-judgment penalty (1st $1,000 / 2nd $1,500 / 3rd $2,000 →
+   $250 / $375 / $500). Late fees ride on top (e.g. 000922319K: penalty $1,000 + $300 late fees =
+   $1,300 paid) and are not shared. The old rule — a flat $250 cap once the amount exceeds $1,000, applied
+   to paid_amount — was right only for 1st offenses: it understated every 2nd/3rd-offense default, and
+   it valued defaulted rows off the $350 fine instead of the penalty NYC had already imposed.
+   Complaints Alex pursues at OATH himself (the Self-Pursue tab) pay 50% of the penalty instead,
+   tagged rec._selfPursue by loadAllData. Verified against NYC's own data (jz4z-kudi, 2022-24 idling:
+   DEFAULTED penalty_imposed is 1000/1500/2000 on ~99% of tickets) and Alex's Paid log ($375 appears). */
+const CACP_SHARE = 0.25;
 const SELF_SHARE = 0.5;
-function computePayout(amount, rec){
-  amount = Number(amount) || 0;
-  if(amount <= 0) return 0;
-  if(rec && rec._selfPursue) return +(amount * SELF_SHARE).toFixed(2);
-  if(amount > 1000) return 250; // program cap: flat $250 when the collected amount exceeds $1,000
-  return +(amount * 0.25).toFixed(2);
+const DEFAULT_PENALTY = { 1:1000, 2:1500, 3:2000 };
+// The share on a penalty. Callers pass the PENALTY (see penaltyBasis), not paid_amount.
+function computePayout(penalty, rec){
+  penalty = Number(penalty) || 0;
+  if(penalty <= 0) return 0;
+  return +(penalty * ((rec && rec._selfPursue) ? SELF_SHARE : CACP_SHARE)).toFixed(2);
 }
 const STANDARD_PAYOUT = 87.5; // 25% of the standard $350 fine — used only when a requested row has no dollar amount on file yet
 
 /* Repeat-offense fine tiers, detected from the Description column.
-   (Per user spec: 1st $350, 2nd $450, 3rd $600. Note NYC's official schedule is
-   350/440/600 — if 440 is correct, change the single number below.) */
-const FINE_BY_OFFENSE = { 1:350, 2:450, 3:600 };
+   (1st $350, 2nd $440, 3rd $600 — NYC's schedule; confirmed by Alex 11/25/2026.) */
+const FINE_BY_OFFENSE = { 1:350, 2:440, 3:600 };
+/* Static expected value of ONE ISSUED TICKET, per offense tier, as a penalty (x25% = your share).
+   This is the average over ALL tickets NYC issued — including the ones that default and never pay,
+   are dismissed, or are still stuck — not just the ones that ended up paid. Tickets that do get paid
+   either pay on time (350/440/600) or after defaulting (1000/1500/2000), and about 1 in 4 of them is
+   the latter, but a third of 1st-offense tickets never pay at all; the two roughly cancel for 1sts
+   and the default penalty wins for 2nds / 3rds.
+   Source: NYC OATH jz4z-kudi, DEP idling tickets with violation dates 2022-23 (95,411 / 10,581 /
+   18,409 tickets); sum(penalty_imposed where PAID IN FULL) / all tickets = $365.84 / $559.76 / $750.60,
+   i.e. $91.46 / $139.94 / $187.65 at 25%. Paid-in-full share was 67% / 76% / 81%.
+   Used for OPEN and SCHEDULED rows only, times Q (the share of filings that become tickets at all,
+   i.e. aren't disqualified) and, for open rows, T(age). It must NOT be multiplied by the win rate W —
+   dismissals and non-payment are already inside it. Backtest on your own filings: late-2022 / early-2023
+   cohorts realized $77-83 per filed complaint; this predicts ~$88 (the old on-time x W predicted $78,
+   and the "ended up paid" average x W predicted $121, which was far too high).
+   Requested / paid-in-full rows are real money, defaulted rows already use the default penalty. */
+const EXPECTED_TICKET_PENALTY = { 1:366, 2:560, 3:751 };
+function openBasePayout(rec){ return computePayout(EXPECTED_TICKET_PENALTY[rec.offense || 1] || EXPECTED_TICKET_PENALTY[1], rec); }
+function isDefaultedRow(rec){ return /DEFAULT/i.test(String(rec.hearingStatus||'')) || /DEFAULT/i.test(String(rec.hearingResult||'')); }
+/* The penalty a row's share is computed on:
+   - money already collected: the penalty portion of it. paid_amount carries late fees, so cap it at
+     penalty_imposed (when NYC's penalty is unknown, at the default penalty for the tier)
+   - defaulted, not yet collected: the default-judgment penalty NYC has imposed (the sheet's own
+     penalty column can lag, so a sub-$1,000 value on a defaulted row is replaced by the tier's penalty)
+   - otherwise: the penalty on the ticket, falling back to the tier's normal fine */
+function penaltyBasis(rec){
+  const off = rec.offense || 1;
+  const pen = Number(rec.penaltyImposed) || 0, paid = Number(rec.paidAmount) || 0, viol = Number(rec.violationAmount) || 0;
+  if(paid > 0) return pen > 0 ? Math.min(pen, paid) : Math.min(paid, DEFAULT_PENALTY[off]);
+  if(isDefaultedRow(rec)) return pen >= DEFAULT_PENALTY[1] ? pen : DEFAULT_PENALTY[off];
+  return pen || viol || FINE_BY_OFFENSE[off];
+}
+function payoutFor(rec){ return computePayout(penaltyBasis(rec), rec); }
 function detectOffense(desc){
   const d = String(desc||'').toLowerCase();
   // matches "3rd offense", "third offense", DEP's standard "3rd or subsequent offense", and the
@@ -1268,7 +1306,7 @@ function detectOffense(desc){
    - the base violation amount hitting NYC's exact schedule: $350→1st, $440/$450→2nd, $600→3rd
    - the description text ("2nd offense" etc.) */
 const TIER_BY_VIOLATION = { 350:1, 440:2, 450:2, 600:3 };
-const TIER_BY_SHARE = { 87.5:1, 110:2, 112.5:2, 150:3 };
+const TIER_BY_SHARE = { 87.5:1, 110:2, 112.5:2, 150:3, 375:2, 500:3 }; // 375 / 500 = 25% of the 2nd / 3rd-offense DEFAULT penalty ($1,500 / $2,000); 250 is a 1st-offense default
 function offenseFor(rec){
   const fromDesc = detectOffense(rec.description);
   const fromShare = TIER_BY_SHARE[rec.paidToMe] || 1;
@@ -1278,7 +1316,7 @@ function offenseFor(rec){
 
 /* ---- Plate-history tier inference (LOCAL data only — no API calls) ----
    Why exact amounts and descriptions undercount 3rds: defaulted cases carry penalty-inflated
-   totals that never equal $600, the $250 cap erases the payout signal above $1,000, and the
+   totals that never equal $600, the old flat $250 cap erased the payout signal above $1,000, and the
    description only knows what was typed in the field. The plate's own filing history is the
    real signal. Legal rule (15 RCNY 43-01(5)): a 2nd offense requires one prior FINDING of
    violation (default counts; a paid or requested case implies a finding); the 3-year window
@@ -1321,7 +1359,7 @@ function applyPlateHistoryTiers(merged){
       const tier = within.length >= 2 ? 3 : 2;
       cur.rec._plateTier = tier;
       const newOffense = offenseFor(cur.rec);
-      if(newOffense > (cur.rec.offense||1)){ cur.rec.offense = newOffense; upgraded++; }
+      if(newOffense > (cur.rec.offense||1)){ cur.rec.offense = newOffense; cur.rec.payout = payoutFor(cur.rec); upgraded++; }
     }
   }
   if(upgraded) console.log('[offense] plate history upgraded ' + upgraded + ' rows to 2nd/3rd tier');
@@ -1548,8 +1586,8 @@ function complaintCell(rec){
        + Σ requested (full base)                          — confirmed, in the mail
        + Σ NYC-shows-paid-in-full (full base)             — sitting at NYC, unclaimed
        + Σ defaulted (base × 0.5)                         — finding exists; collection ~coin-flip
-       + Σ hearing-scheduled (base × W)                   — demonstrably moving; no age fade
-       + Σ open (base × W × T(age))                       — waiting; fades on the tail below
+       + Σ hearing-scheduled (open base × Q)              — demonstrably moving; no age fade
+       + Σ open (open base × Q × T(age))                  — waiting; fades on the tail below
        + Σ disqualified/dismissed (0)
 
    W  = lifetime win rate among RESOLVED rows (moneyed ÷ (moneyed + dead)). Lifetime on
@@ -1564,7 +1602,7 @@ const DEFAULT_COLLECTION = 0.5; // defaulted = finding of violation; NYC's event
 let SURV = null;
 function median(sortedArr){ return sortedArr.length ? sortedArr[Math.floor(sortedArr.length/2)] : null; }
 function buildSurvival(){
-  let moneyed = 0, dead = 0;
+  let moneyed = 0, dead = 0, dq = 0, ticketed = 0;
   const conv = []; // {when: conversion ts, age: days from incident}
   for(const r of appData.merged){
     if(r._rowType === 'paid' || r._rowType === 'requested'){
@@ -1574,12 +1612,16 @@ function buildSurvival(){
       if(inc && c && c > inc) conv.push({ when: c.getTime(), age: (c - inc) / 86400000 });
     }
     else if(r._rowType === 'disqualified' || r._rowType === 'dismissed') dead++;
+    if(r._rowType === 'disqualified') dq++; else if(r.summons) ticketed++;
   }
   const allAges = conv.map(x=>x.age).sort((a,b)=>a-b);
   const recentAges = conv.slice().sort((a,b)=>b.when-a.when).slice(0,50).map(x=>x.age).sort((a,b)=>a-b);
   const histMed = median(allAges), curMed = median(recentAges);
   SURV = {
     W: (moneyed + dead) >= 30 ? moneyed / (moneyed + dead) : null,
+    // Q = share of filings that become a real ticket (are not disqualified), among the ones DEP has
+    // reviewed (disqualified + ticketed). Dismissals are NOT taken out here — they're in the NYC expected value.
+    Q: (dq + ticketed) >= 100 ? 1 - dq / (dq + ticketed) : 0.94,
     allAges,
     warp: (histMed && curMed) ? Math.max(0.25, curMed / histMed) : 1,
     resolvedN: moneyed + dead
@@ -1645,17 +1687,18 @@ function categorize(rec){
 function expectedPayoutFor(rec){
   const cat = categorize(rec);
   if(cat === 'dead') return 0;
-  if(cat === 'paid') return rec.paidToMe || rec.payout || computePayout(FINE_BY_OFFENSE[rec.offense||1], rec);
-  const base = computePayout(rec.paidAmount || rec.violationAmount || FINE_BY_OFFENSE[rec.offense||1], rec);
+  if(cat === 'paid') return rec.paidToMe || rec.payout || payoutFor(rec);
+  const base = (cat === 'open' || cat === 'scheduled') ? openBasePayout(rec) : payoutFor(rec);
   if(cat === 'requested' || cat === 'pifUnclaimed') return base;
   if(cat === 'defaulted') return base * DEFAULT_COLLECTION;
   // Build the survival model first, like the open branch below does: reading SURV while it's null
   // silently used the 0.85 fallback for any scheduled row evaluated before the first open row, so
   // the total depended on row order right after SURV was reset (a ~$2 wobble on ~$580k).
-  if(cat === 'scheduled'){ if(!SURV) buildSurvival(); return base * ((SURV && SURV.W != null) ? SURV.W : 0.85); }
+  if(cat === 'scheduled'){ if(!SURV) buildSurvival(); return base * SURV.Q; }
   const inc = incidentDateOf(rec);
   const age = inc ? (Date.now() - inc.getTime()) / 86400000 : 9999;
-  return base * survivalP(age);
+  if(!SURV) buildSurvival();
+  return base * SURV.Q * survivalT(age);
 }
 
 /* Console-auditable breakdown of the Estimated Grand Total. */
@@ -1672,9 +1715,9 @@ function egtBreakdown(){
 function egtBreakdownText(){
   if(!SURV) buildSurvival();
   const b = egtBreakdown();
-  const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×W', open:'Open ×W×T'};
+  const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×Q', open:'Open ×Q×T'};
   const lines = Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev));
-  const survLine = 'W=' + (SURV.W==null?'n/a':(SURV.W*100).toFixed(1)+'%') + ' · warp=×' + SURV.warp.toFixed(2) + ' · resolved=' + SURV.resolvedN;
+  const survLine = 'Q=' + (SURV.Q*100).toFixed(1) + '% · W=' + (SURV.W==null?'n/a':(SURV.W*100).toFixed(1)+'%') + ' · warp=×' + SURV.warp.toFixed(2) + ' · resolved=' + SURV.resolvedN;
   return lines.join(' · ') + '\n' + survLine;
 }
 /* Incident-time basis: the From clip timestamp is when the violation actually HAPPENED.
@@ -1863,7 +1906,7 @@ async function loadAllData(silent){
       rec._block = parseBlock(rec.location);
       rec._hotBlock = hotBlockOf(rec._block) || hotBlockRawOf(rec.location);
       rec.offense = offenseFor(rec);
-      rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+      rec.payout = payoutFor(rec);
       merged.push(rec);
     }
   }
@@ -1962,7 +2005,7 @@ function diffAgainstPrevious(merged){
     // in the EGT until the next successful refresh.
     if(!rec.paidAmount && old.paidAmount){
       rec.paidAmount = old.paidAmount;
-      rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+      rec.payout = payoutFor(rec);
     }
     if((old.paidAmount||0) !== (rec.paidAmount||0))
       changes.push(Object.assign({type:'payment_amount', before: money(old.paidAmount||0), after: money(rec.paidAmount||0)}, base));
@@ -2018,7 +2061,7 @@ async function enrichFromNYCBatch(batch){
     if(row.total_violation_amount) rec.violationAmount = numFrom(row.total_violation_amount);
     if(row.penalty_imposed) rec.penaltyImposed = numFrom(row.penalty_imposed);
     if(row.balance_due !== undefined && row.balance_due !== null && row.balance_due !== '') rec.balanceDue = numFrom(row.balance_due);
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+    rec.payout = payoutFor(rec);
     rec._liveConfirmed = true; // this row's fields came from an actual NYC check this refresh, not just the sheet's raw column
   }
 }
@@ -2091,7 +2134,7 @@ function carryForwardFailedEnrichment(merged){
     rec.violationAmount = old.violationAmount;
     rec.penaltyImposed = old.penaltyImposed;
     rec.balanceDue = old.balanceDue;
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+    rec.payout = payoutFor(rec);
   }
 }
 
@@ -2153,7 +2196,7 @@ function reconcilePIFLedger(merged, prev, changeLog){
     rec.hearingStatus = known.status || 'PAID IN FULL';
     if(!rec.paidAmount && known.paidAmount) rec.paidAmount = known.paidAmount;
     if(known.balanceDue != null) rec.balanceDue = known.balanceDue;
-    rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+    rec.payout = payoutFor(rec);
     classifyRow(rec); rec.offense = offenseFor(rec);
     restored++;
   }
@@ -2318,7 +2361,7 @@ async function runReallyGoodRefresh(){
             if(detail.hearingResult) rec.hearingResult = detail.hearingResult;
             if(detail.balanceDue != null) rec.balanceDue = detail.balanceDue;
             rec._liveConfirmed = true;
-            rec.payout = computePayout(rec.paidAmount || rec.violationAmount, rec);
+            rec.payout = payoutFor(rec);
             classifyRow(rec);
             rec.offense = offenseFor(rec);
             updated++;
@@ -2750,6 +2793,12 @@ function spStage(c, o, shareRequested){
   if(c.progress.written) return 'Written';
   return c.hasProgress ? 'Not started' : 'Awaiting OATH';
 }
+// The share is of the penalty collected — paid_amount also carries late fees, which aren't shared.
+function spPenaltyCollected(o){
+  const paid = (o && o.paidAmount) || 0;
+  if(paid <= 0) return 0;
+  return o.penalty > 0 ? Math.min(o.penalty, paid) : paid;
+}
 function spBuildViews(cases, oathMap, shareReq, now){
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return cases.map(c => {
@@ -2762,7 +2811,7 @@ function spBuildViews(cases, oathMap, shareReq, now){
       c, o, hearing, hearingKey: hearing ? spDayKey(hearing) : '', decided, paid, requested,
       stage: spStage(c, o, requested),
       statusLabel: !c.summons ? 'No summons # yet' : (!o ? 'Not in OATH yet' : (o.hearingStatus || 'In OATH')),
-      share: paid ? (o.paidAmount || 0) * SP_SHARE : 0,
+      share: paid ? spPenaltyCollected(o) * SP_SHARE : 0,
       upcoming: !!hearing && !decided && hearing >= today,
       sig: o ? [o.hearingStatus, o.hearingResult, o.penalty, o.paidAmount, o.balanceDue, o.hearingDate, o.decisionDate].join('|') : 'none'
     };
@@ -2810,7 +2859,7 @@ function spPriorLinks(c){
 function spPayoutEmail(views, me){
   const list = views.filter(v => v.c.summons), one = list.length === 1;
   const lines = list.map(v => 'Summons ' + v.c.summons + (v.c.company ? ' — ' + v.c.company : '') +
-    (v.o && v.o.paidAmount ? ' (collected ' + money(v.o.paidAmount) + ')' : ''));
+    (v.o && v.o.paidAmount ? ' (penalty collected ' + money(spPenaltyCollected(v.o)) + ')' : ''));
   return {
     to: SP_PAYOUT_EMAIL,
     subject: one ? 'Citizen petitioner share request — Summons ' + list[0].c.summons : 'Citizen petitioner share request — ' + list.length + ' summonses',
@@ -4277,7 +4326,7 @@ function renderStats(){
   all.forEach(r => { const o = off[r.offense||1]; o.n++; o.est += expectedPayoutFor(r); });
   const offMax = Math.max(off[1].n, off[2].n, off[3].n);
   document.getElementById('stats-offense').innerHTML =
-    [[1,'1st offense ($350)'],[2,'2nd offense ($450)'],[3,'3rd offense ($600)']].map(([t,lbl]) =>
+    [[1,'1st offense ($350)'],[2,'2nd offense ($440)'],[3,'3rd offense ($600)']].map(([t,lbl]) =>
       hbar(lbl, off[t].n, offMax, `${off[t].n.toLocaleString()} · est ${moneyShort(off[t].est)}`, t===1?'var(--blue)':(t===2?'var(--warn)':'var(--danger)'))
     ).join('');
 
