@@ -170,6 +170,23 @@
   tr.row-nohearing:hover td{background:#c1def8;}
   tr.row-dismissed .badge, tr.row-dismissed .badge.dataset-at, tr.row-dismissed .badge.dataset-atnyc, tr.row-dismissed .badge.dataset-mbt{background:rgba(255,255,255,.25); color:#fff;}
 
+  /* Company Tiers */
+  .tier{display:inline-block; min-width:24px; text-align:center; padding:2px 8px; border-radius:6px; font-weight:800; font-size:.9em;}
+  .tier-S{background:rgba(33,138,76,.2); color:var(--success);}
+  .tier-A{background:rgba(61,124,201,.18); color:var(--blue2);}
+  .tier-B{background:var(--panel2); color:var(--text);}
+  .tier-C{background:rgba(176,125,29,.18); color:var(--warn);}
+  .tier-D{background:rgba(192,57,43,.16); color:var(--danger);}
+  .tier-U{background:var(--panel2); color:var(--dim);}
+  #ct-stats{grid-template-columns:repeat(6,1fr);}
+  #ct-stats .stat-card{padding:10px 10px;}
+  #ct-stats .stat-card .value{font-size:1.2em;}
+  #ct-stats .stat-card .label{font-size:.66em;}
+  #ct-stats .stat-card .sub{font-size:.66em; line-height:1.45;}
+  @media (max-width:1100px){ #ct-stats{grid-template-columns:repeat(3,1fr);} }
+  @media (max-width:640px){ #ct-stats{grid-template-columns:repeat(2,1fr);} }
+  #ct-table th.num, #ct-table td.num{text-align:right;}
+  #ct-table tr.ct-mine td:nth-child(2){font-weight:700;}
   a.sum-link{color:var(--blue2); font-weight:600; text-decoration:underline; text-underline-offset:2px;}
   a.sum-link:hover{color:var(--orange2);}
   tr.row-dismissed a.sum-link{color:#fff;}
@@ -354,6 +371,7 @@
     <button class="tab-btn" data-tab="newmoney">New Money</button>
     <button class="tab-btn" data-tab="calendar">Calendar</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
+    <button class="tab-btn" data-tab="tiers">Company Tiers</button>
     <button class="tab-btn" data-tab="changes">Changes<span class="pip" id="changes-pip" style="display:none;">0</span></button>
     <button class="tab-btn" data-tab="selfpursue">Self-Pursue</button>
     <button class="tab-btn" data-tab="map">Map</button>
@@ -645,6 +663,36 @@
         <button class="btn ghost" id="btn-clear-changes">Clear Change Log</button>
       </div>
       <div id="changes-list"></div>
+    </div>
+  </section>
+
+  <!-- COMPANY TIERS: respondents ranked by what NYC's own history says a summons against them is worth. Built by renderCompanyTiers(). -->
+  <section class="tab-content" id="tab-tiers">
+    <div class="sp-status" id="ct-status"></div>
+    <div class="grid" id="ct-stats"></div>
+
+    <div class="panel">
+      <h2>Company Rankings <span class="tag" id="ct-table-tag"></span></h2>
+      <p class="desc">Every respondent with 100+ idling summonses in NYC's open data (violations 2022–24), ranked by <b>expected bounty per summons</b>. Click a column to sort. Your own filings sit alongside, so you can see where your effort is going.</p>
+      <div class="search-row">
+        <input type="search" id="ct-search" placeholder="Search company…">
+        <select id="ct-filter-tier"><option value="">All tiers</option><option value="S">Tier S</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option><option value="D">Tier D</option><option value="U">Unrated</option></select>
+        <label class="check-row"><input type="checkbox" id="ct-mine"> Only companies I've filed on</label>
+        <label class="check-row"><input type="checkbox" id="ct-unrated"> Include unrated (&lt;100 summonses)</label>
+        <button class="btn ghost" id="ct-refresh" title="Re-pull the aggregates from NYC OATH open data">Refresh NYC data</button>
+      </div>
+      <div class="table-wrap"><table id="ct-table"></table></div>
+    </div>
+
+    <div class="panel">
+      <h2>How the tiers are built</h2>
+      <div class="desc" style="margin-top:0;">
+        <p><b>Expected $ / summons</b> = 25% × (penalties on tickets that ended <i>paid in full</i>) ÷ <i>all</i> tickets for that respondent. Dismissed, unpaid and still-defaulted tickets count as $0, and a respondent who defaults and later pays ($1,000–$2,000 penalty) is worth more than one who pays on time ($350–$600) — the same quantity the Estimated Grand Total uses for open rows.</p>
+        <p><b>Shrinkage:</b> small samples are pulled toward the citywide average (as if 40 extra summonses sat at the mean), so a respondent with a handful of lucky tickets can't land in tier S. Respondents under 100 summonses are left <i>unrated</i>.</p>
+        <p><b>Tiers</b> are multiples of the citywide mean: S ≥ 2.0×, A ≥ 1.25×, B ≥ 0.8×, C ≥ 0.35×, D below that.</p>
+        <p><b>Reading the columns:</b> <i>Paid</i> is the share of tickets that ended paid in full; <i>Dismissed</i> is the share thrown out at hearing (tour buses, rental cars passing tickets to renters, ambulettes…); <i>Still default</i> is collection risk; <i>2nd/3rd</i> is the share of repeat-offense tickets (those pay more).</p>
+        <p class="note">Caveats: NYC's data can't separate citizen-submitted tickets from DEP-inspector tickets, so this is the respondent's behaviour across all idling tickets. 2022–24 tickets are mostly but not fully resolved — some defaults will still pay, so values lean slightly low. NYC truncates respondent names at 30 characters and spells companies several ways; common ones are rolled up (Con Ed, Brinks, USIC, FedEx, Verizon…) and anything unrecognised stays separate. Respondent names are no longer published for 2026 tickets, so this is historical reputation, not a live feed.</p>
+      </div>
     </div>
   </section>
 
@@ -1116,6 +1164,89 @@ function normalizeCompanyName(companyName){
     const normalized = companyName.toUpperCase().trim();
     const mapped = companyNameMapping[normalized] || normalized;
     return rollUpParent(mapped);
+}
+
+/* ============================== COMPANY TIERS: pure logic ==============================
+   Ranks respondents by what a summons against them is worth to you, using NYC's own history of
+   idling tickets (violation years CT_YEARS, old enough to be mostly resolved). The unit is the same
+   one the grand formula uses for open rows: expected bounty per ISSUED summons =
+   25% x sum(penalty_imposed of tickets that ended PAID IN FULL) / ALL tickets, so tickets that are
+   dismissed, never paid, or stuck in default count as $0, and a respondent who defaults and then
+   pays ($1,000+ penalty) counts for more than one who pays on time ($350). Small samples are
+   shrunk toward the citywide average (CT_PRIOR_M phantom summonses at the mean) so 3 lucky tickets
+   can't make a tier S. */
+const CT_YEARS = [2022, 2023, 2024];
+const CT_MIN_N = 100;       // summonses before a company is rated at all
+const CT_PRIOR_M = 40;      // shrinkage strength (phantom summonses at the citywide average)
+const CT_CUTS = [['S', 2.0], ['A', 1.25], ['B', 0.8], ['C', 0.35]]; // x the citywide mean $/summons; below the last = D
+const CT_TTL_MS = 14 * 86400000;
+/* NYC truncates respondent_last_name at 30 characters ("CONSOLIDATED EDISON OF NEW YOR"), and the
+   same company is spelled several ways, so a prefix rule beats an exact-match table. Applied to BOTH
+   NYC's names and yours, so the join is always on the same key. */
+const CT_ALIASES = [
+  [/^CONSOLIDATED EDISON\b/, 'CON EDISON'], [/^CON ?ED(ISON)?\b/, 'CON EDISON'],
+  [/^BRINK/, 'BRINKS'], [/^USIC\b/, 'USIC'], [/^LABQ\b/, 'LABQ'],
+  [/^HALLEN CONSTRUCTION\b/, 'HALLEN CONSTRUCTION'], [/^HYLAN DATACOM\b/, 'HYLAN DATACOM'],
+  [/^HUGH O ?KANE\b/, 'HUGH OKANE ELECTRIC'], [/^MERCHANTS? (S )?(FLEET|AUTOMOTIVE)\b/, 'MERCHANTS FLEET'],
+  [/^LOOMIS\b/, 'LOOMIS ARMORED'], [/^HYLAN\b/, 'HYLAN DATACOM'], [/^A ?L CESSPOOL\b/, 'A L CESSPOOL SERVICE'],
+  [/^PIECE OF CAKE MOVING\b/, 'PIECE OF CAKE MOVING'], [/^CALL ?A ?HEAD\b/, 'CALL-A-HEAD'], [/^U ?T ?F TRUCKING\b/, 'UTF TRUCKING'],
+  [/^(SPECTRUM|CHARTER COMMUNICATIONS)\b/, 'CHARTER COMMUNICATIONS'], [/^EMPIRE CITY SUBWAY\b/, 'EMPIRE CITY SUBWAY']
+];
+function ctKey(name){
+  const base = normalizeCompanyName(name);
+  if(!base || base === 'Unknown') return '';
+  const k = String(base).toUpperCase().replace(/[.,'’]/g, ' ').replace(/[&+]/g, ' AND ')
+    .replace(/\b(LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|THE)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if(!k || /^(UNKNOWN|UNK|NONE|N A|NA|NOT AVAILABLE)$/.test(k)) return '';   // placeholders, not companies
+  for(const [re, to] of CT_ALIASES) if(re.test(k)) return to;
+  return k;
+}
+/* The join key: spacing/punctuation/"AND" differences ("A L CESSPOOL" vs "AL CESSPOOL", "CHEF'S" vs "CHEFS") vanish. */
+function ctLoose(k){ return String(k).replace(/\bAND\b/g, ' ').replace(/[^A-Z0-9]/g, ''); }
+function ctTierOf(ratio){ for(const [t, cut] of CT_CUTS) if(ratio >= cut) return t; return 'D'; }
+/* data = { rows: [{name,n,pen,paid,dism,dflt,third,second}], total: {n,pen} } as cached from NYC. */
+function ctBuild(data){
+  const gN = (data.total && data.total.n) || 0;
+  const gMean = gN ? CACP_SHARE * data.total.pen / gN : 0;
+  const map = new Map();
+  for(const r of (data.rows || [])){
+    const disp = ctKey(r.name);
+    if(!disp) continue;
+    const k = ctLoose(disp);
+    let c = map.get(k);
+    if(!c){ c = { key:k, name:disp, topN:0, n:0, pen:0, paid:0, dism:0, dflt:0, third:0, second:0, spellings:0 }; map.set(k, c); }
+    if((+r.n || 0) > c.topN){ c.topN = +r.n || 0; c.name = disp; }   // show the biggest spelling's rolled-up name
+    c.n += +r.n || 0; c.pen += +r.pen || 0; c.paid += +r.paid || 0; c.dism += +r.dism || 0;
+    c.dflt += +r.dflt || 0; c.third += +r.third || 0; c.second += +r.second || 0; c.spellings++;
+  }
+  const cos = [...map.values()].filter(c => c.n > 0);
+  for(const c of cos){
+    c.raw = CACP_SHARE * c.pen / c.n;
+    c.eb = (CACP_SHARE * c.pen + CT_PRIOR_M * gMean) / (c.n + CT_PRIOR_M);
+    c.paidPct = c.paid / c.n; c.dismPct = c.dism / c.n; c.dfltPct = c.dflt / c.n; c.mix = (c.third + c.second) / c.n;
+    c.rated = c.n >= CT_MIN_N && gMean > 0;
+    c.tier = c.rated ? ctTierOf(c.eb / gMean) : null;
+  }
+  const rated = cos.filter(c => c.rated).sort((a, b) => b.eb - a.eb);
+  rated.forEach((c, i) => { c.rank = i + 1; });
+  const byTier = {};
+  for(const [t] of CT_CUTS.concat([['D', 0]])) byTier[t] = { companies:0, n:0, bounty:0 };
+  let ratedN = 0, ratedBounty = 0;
+  for(const c of rated){ const b = byTier[c.tier]; b.companies++; b.n += c.n; b.bounty += CACP_SHARE * c.pen; ratedN += c.n; ratedBounty += CACP_SHARE * c.pen; }
+  const cuts = {}; for(const [t, cut] of CT_CUTS) cuts[t] = cut * gMean;
+  const byKey = new Map(cos.map(c => [c.key, c]));
+  // NYC cut names off at 30 chars, so a long key of yours can be the full spelling of one of theirs.
+  const longKeys = cos.filter(c => c.key.length >= 24).sort((a, b) => b.n - a.n);
+  const memo = new Map();
+  const resolve = k => {
+    if(byKey.has(k)) return k;
+    if(memo.has(k)) return memo.get(k);
+    let hit = k;
+    for(const c of longKeys) if(k.startsWith(c.key)){ hit = c.key; break; }
+    memo.set(k, hit);
+    return hit;
+  };
+  return { cos, rated, byTier, gMean, gN, ratedN, ratedBounty, cuts, byKey, resolve };
 }
 
 /* ============================== CSV PARSER ============================== */
@@ -4605,7 +4736,7 @@ function renderStats(){
 
 /* ============================== RENDER: DASHBOARD (home) ============================== */
 function goToTab(name){
-  spOnLeave(name);
+  spOnLeave(name); ctOnTab(name);
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
   const el = document.getElementById('tab-'+name);
@@ -4845,7 +4976,199 @@ function renderChanges(){
 }
 
 /* ============================== RENDER ALL / TABS ============================== */
-function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); renderSelfPursue(); }
+/* ============================== RENDER: COMPANY TIERS ============================== */
+/* NYC aggregates, pulled live but only when the Company Tiers tab is opened (never on the load path),
+   cached in IndexedDB for CT_TTL_MS. One grouped query per violation year, in parallel — the same
+   aggregation over all three years at once times out on NYC's side, one year takes ~1-2s. */
+const CT_BASE = 'https://data.cityofnewyork.us/resource/jz4z-kudi.json';
+const CT_TIMEOUT_MS = 45000;
+const CT_SELECT = "respondent_last_name,count(*) as n,sum(case(hearing_status='PAID IN FULL',penalty_imposed,true,0)) as pen,sum(case(hearing_status='PAID IN FULL',1,true,0)) as paid,sum(case(hearing_result='DISMISSED',1,true,0)) as dism,sum(case(hearing_status='DEFAULTED',1,true,0)) as dflt,sum(case(charge_1_code_description like '%3RD%',1,true,0)) as third,sum(case(charge_1_code_description like '%2ND%',1,true,0)) as second";
+const CT_TOTAL_SELECT = "count(*) as n,sum(case(hearing_status='PAID IN FULL',penalty_imposed,true,0)) as pen";
+let ctData = null;                       // {fetchedAt, years, rows, total}
+let ctState = { loading:false, error:'', tried:false, built:null, builtKey:'' };
+const ctUI = { sort:'eb', dir:-1, q:'', tier:'', mine:false, unrated:false };
+
+function ctWhere(y){
+  return "charge_1_code_description like '%IDLING%' AND issuing_agency like 'DEP%' AND violation_date between '" + y + "-01-01T00:00:00' and '" + y + "-12-31T23:59:59'";
+}
+function ctUrl(y, grouped){
+  const q = [['$select', grouped ? CT_SELECT : CT_TOTAL_SELECT], ['$where', ctWhere(y)]];
+  if(grouped) q.push(['$group', 'respondent_last_name'], ['$order', 'n desc'], ['$limit', '1500']);
+  return CT_BASE + '?' + q.map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+}
+async function ctGetJSON(url){
+  let err;
+  for(let i = 0; i < 2; i++){            // one retry: NYC returns the odd 503
+    try{
+      const res = await fetchWithTimeout(url, CT_TIMEOUT_MS);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.json();
+    }catch(e){ err = e; }
+  }
+  throw err;
+}
+async function ctFetchAll(){
+  const jobs = [];
+  for(const y of CT_YEARS){ jobs.push(ctGetJSON(ctUrl(y, true))); jobs.push(ctGetJSON(ctUrl(y, false))); }
+  const out = await Promise.all(jobs);
+  const byName = new Map(); const total = { n:0, pen:0 };
+  CT_YEARS.forEach((y, i) => {
+    const grouped = out[i * 2], tot = out[i * 2 + 1];
+    if(!Array.isArray(grouped) || !Array.isArray(tot) || !tot[0]) throw new Error('unexpected response for ' + y);
+    total.n += +tot[0].n || 0; total.pen += +tot[0].pen || 0;
+    for(const r of grouped){
+      const name = String(r.respondent_last_name || '').trim();
+      if(!name) continue;
+      let o = byName.get(name);
+      if(!o){ o = { name, n:0, pen:0, paid:0, dism:0, dflt:0, third:0, second:0 }; byName.set(name, o); }
+      for(const f of ['n', 'pen', 'paid', 'dism', 'dflt', 'third', 'second']) o[f] += +r[f] || 0;
+    }
+  });
+  if(!total.n) throw new Error('NYC returned no summonses');
+  const rows = [...byName.values()].filter(o => o.n >= 20);   // the long tail of tiny respondents isn't worth caching
+  return { fetchedAt: Date.now(), years: CT_YEARS.slice(), rows, total };
+}
+async function ctEnsureLoaded(force){
+  if(ctState.loading) return;
+  if(!ctData){
+    try{ ctData = (await idbGet('companyTiers')) || null; }catch(e){ ctData = null; }
+    renderCompanyTiers();
+  }
+  const stale = !ctData || (Date.now() - (ctData.fetchedAt || 0) > CT_TTL_MS);
+  if(!force && (!stale || ctState.tried)) return;
+  ctState.tried = true; ctState.loading = true; ctState.error = '';
+  renderCompanyTiers();
+  try{
+    const d = await ctFetchAll();
+    ctData = d;
+    idbSet('companyTiers', d);
+  }catch(e){
+    ctState.error = (e && e.name === 'AbortError') ? 'NYC took too long to answer' : (e && e.message) || 'request failed';
+  }
+  ctState.loading = false;
+  renderCompanyTiers();
+}
+function ctOnTab(name){ if(name === 'tiers') ctEnsureLoaded(false); }
+
+/* Your side of the join: your filings grouped by the same ctKey as NYC's respondents. */
+function ctMine(T){
+  const m = new Map();
+  for(const r of appData.merged){
+    const disp = ctKey(r.company);
+    if(!disp) continue;
+    const k = T.resolve(ctLoose(disp));
+    let o = m.get(k);
+    if(!o){ o = { key:k, name:disp, filings:0, got:0, est:0, received:0 }; m.set(k, o); }
+    o.filings++;
+    if(r._rowType === 'paid' || r._rowType === 'requested') o.got++;
+    if(r._rowType === 'paid') o.received += r.paidToMe || 0;
+    o.est += expectedPayoutFor(r);
+  }
+  return m;
+}
+function ctPct(x){ return x == null ? '—' : (x * 100).toFixed(x < 0.1 && x > 0 ? 1 : 0) + '%'; }
+
+function renderCompanyTiers(){
+  const root = document.getElementById('tab-tiers');
+  if(!root) return;
+  const statusEl = document.getElementById('ct-status'), statsEl = document.getElementById('ct-stats'), tbl = document.getElementById('ct-table');
+  const refreshBtn = document.getElementById('ct-refresh');
+  if(refreshBtn) refreshBtn.disabled = ctState.loading;
+
+  // ---- status line ----
+  let st;
+  if(ctState.loading) st = 'Pulling idling-summons history from NYC OATH open data… (' + CT_YEARS.join(', ') + ')';
+  else if(ctData) st = '<b>' + ctData.total.n.toLocaleString() + '</b> NYC idling summonses (violations ' + CT_YEARS[0] + '–' + CT_YEARS[CT_YEARS.length - 1] + ') · fetched ' + esc(new Date(ctData.fetchedAt).toLocaleDateString());
+  else st = 'No NYC data yet. ' + (ctState.error ? '' : 'Opening this tab pulls it.');
+  if(ctState.error) st += '<div class="sp-err">Couldn\'t reach NYC (' + esc(ctState.error) + ')' + (ctData ? ' — showing the last saved copy.' : '.') + ' Try “Refresh NYC data”.</div>';
+  statusEl.innerHTML = st;
+  if(!ctData){ statsEl.innerHTML = ''; tbl.innerHTML = ''; document.getElementById('ct-table-tag').textContent = ''; return; }
+
+  const key = ctData.fetchedAt + ':' + ctData.rows.length;
+  if(ctState.builtKey !== key){ ctState.built = ctBuild(ctData); ctState.builtKey = key; }
+  const T = ctState.built, mine = ctMine(T);
+
+  // ---- tier cards: where NYC's money is vs where YOUR filings are ----
+  let myTotal = 0; mine.forEach(o => { myTotal += o.filings; });
+  const myBy = {}; for(const t of ['S', 'A', 'B', 'C', 'D', 'U']) myBy[t] = { filings:0, est:0, cos:0 };
+  mine.forEach(o => { const c = T.byKey.get(o.key); const t = (c && c.rated) ? c.tier : 'U'; myBy[t].filings += o.filings; myBy[t].est += o.est; myBy[t].cos++; });
+  const cutTxt = { S:'≥ ' + money(T.cuts.S), A:money(T.cuts.A) + '–' + money(T.cuts.S), B:money(T.cuts.B) + '–' + money(T.cuts.A), C:money(T.cuts.C) + '–' + money(T.cuts.B), D:'< ' + money(T.cuts.C) };
+  const card = t => {
+    const b = T.byTier[t], my = myBy[t];
+    return '<div class="stat-card"><div class="label"><span class="tier tier-' + t + '">' + t + '</span> ' + cutTxt[t] + ' / summons</div>' +
+      '<div class="value blue">' + my.filings.toLocaleString() + '</div>' +
+      '<div class="sub">your filings (' + (myTotal ? Math.round(100 * my.filings / myTotal) : 0) + '%) · est. ' + money(my.est) + '<br>NYC: ' + b.companies + (b.companies === 1 ? ' company' : ' companies') + ' · ' + Math.round(100 * b.n / (T.ratedN || 1)) + '% of summonses · ' + Math.round(100 * b.bounty / (T.ratedBounty || 1)) + '% of bounty</div></div>';
+  };
+  statsEl.innerHTML = ['S', 'A', 'B', 'C', 'D'].map(card).join('') +
+    '<div class="stat-card"><div class="label"><span class="tier tier-U">—</span> Unrated</div><div class="value blue">' + myBy.U.filings.toLocaleString() + '</div>' +
+    '<div class="sub">your filings (' + (myTotal ? Math.round(100 * myBy.U.filings / myTotal) : 0) + '%) · est. ' + money(myBy.U.est) + '<br>' + myBy.U.cos + (myBy.U.cos === 1 ? ' company' : ' companies') + ' with under ' + CT_MIN_N + ' NYC summonses</div></div>';
+
+  // ---- table rows: every rated company + any company you've filed on ----
+  // Default view = the rated companies. "Only companies I've filed on" adds your unrated ones (that's your
+  // long tail of one-off companies); "Include unrated" adds NYC's small respondents too.
+  const rows = [];
+  const seen = new Set();
+  for(const c of T.cos){
+    const o = mine.get(c.key);
+    if(!c.rated && !ctUI.unrated && !(ctUI.mine && o)) continue;
+    seen.add(c.key); rows.push({ key:c.key, name:c.name, c, o });
+  }
+  if(ctUI.mine || ctUI.unrated) mine.forEach((o, k) => { if(!seen.has(k)) rows.push({ key:k, name:o.name, c:null, o }); });
+  const q = ctUI.q.trim().toUpperCase();
+  const view = rows.filter(r => {
+    if(q && !r.name.toUpperCase().includes(q)) return false;
+    if(ctUI.mine && !r.o) return false;
+    const tier = (r.c && r.c.rated) ? r.c.tier : 'U';
+    if(ctUI.tier && tier !== ctUI.tier) return false;
+    return true;
+  });
+  const val = (r, k) => {
+    const c = r.c, o = r.o;
+    switch(k){
+      case 'name': return r.name;
+      case 'rank': return (c && c.rated) ? -c.rank : -Infinity;
+      case 'eb': return (c && c.rated) ? c.eb : -Infinity;
+      case 'n': return c ? c.n : -1;
+      case 'paidPct': return c ? c.paidPct : -1;
+      case 'dismPct': return c ? c.dismPct : -1;
+      case 'dfltPct': return c ? c.dfltPct : -1;
+      case 'mix': return c ? c.mix : -1;
+      case 'mine': return o ? o.filings : -1;
+      case 'got': return o ? o.got : -1;
+      case 'est': return o ? o.est : -1;
+    }
+    return 0;
+  };
+  view.sort((a, b) => {
+    const x = val(a, ctUI.sort), y = val(b, ctUI.sort);
+    const d = (typeof x === 'string') ? x.localeCompare(y) : (x - y);
+    return (d || (val(b, 'eb') - val(a, 'eb')) || a.name.localeCompare(b.name)) * (d ? ctUI.dir : 1);
+  });
+  const cols = [['rank', '#'], ['name', 'Company'], ['eb', 'Tier'], ['eb', 'Exp. $ / summons'], ['n', 'NYC summonses'], ['paidPct', 'Paid'], ['dismPct', 'Dismissed'], ['dfltPct', 'Still default'], ['mix', '2nd/3rd'], ['mine', 'Your filings'], ['got', 'Paid + requested'], ['est', 'Your est. total']];
+  const arrow = k => ctUI.sort === k ? (ctUI.dir < 0 ? ' ▼' : ' ▲') : '';
+  const head = '<thead><tr>' + cols.map(([k, l], i) => '<th data-ct="' + k + '"' + (i > 1 ? ' class="num"' : '') + '>' + l + (i === 2 ? '' : arrow(k)) + '</th>').join('') + '</tr></thead>';
+  const body = view.map(r => {
+    const c = r.c, o = r.o, tier = (c && c.rated) ? c.tier : 'U';
+    const tip = c ? (c.spellings + ' spelling' + (c.spellings > 1 ? 's' : '') + ' in NYC data · raw ' + money(c.raw) + ' per summons before shrinkage · ' + c.n.toLocaleString() + ' summonses') : 'No NYC history under this name';
+    return '<tr' + (o ? ' class="ct-mine"' : '') + '>' +
+      '<td class="num">' + ((c && c.rated) ? c.rank : '—') + '</td>' +
+      '<td title="' + esc(tip) + '">' + esc(r.name) + '</td>' +
+      '<td><span class="tier tier-' + tier + '">' + (tier === 'U' ? '—' : tier) + '</span></td>' +
+      '<td class="num">' + ((c && c.rated) ? money(c.eb) : '—') + '</td>' +
+      '<td class="num">' + (c ? c.n.toLocaleString() : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.paidPct) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.dismPct) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.dfltPct) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.mix) : '—') + '</td>' +
+      '<td class="num">' + (o ? o.filings.toLocaleString() : '—') + '</td>' +
+      '<td class="num">' + (o ? o.got.toLocaleString() : '—') + '</td>' +
+      '<td class="num">' + (o ? money(o.est) : '—') + '</td></tr>';
+  }).join('');
+  tbl.innerHTML = head + '<tbody>' + (body || '<tr><td colspan="' + cols.length + '" style="text-align:center;color:var(--dim);padding:18px;">Nothing matches.</td></tr>') + '</tbody>';
+  document.getElementById('ct-table-tag').textContent = view.length.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' companies · citywide avg ' + money(T.gMean) + ' / summons';
+}
+
+function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); renderSelfPursue(); if(ctData) renderCompanyTiers(); }
 
 document.getElementById('dash-queue').addEventListener('click', (e) => {
   const item = e.target.closest('[data-goto]');
@@ -4868,7 +5191,7 @@ document.getElementById('cal-grid').addEventListener('click', (e) => {
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    spOnLeave(btn.dataset.tab);
+    spOnLeave(btn.dataset.tab); ctOnTab(btn.dataset.tab);
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
     btn.classList.add('active');
@@ -4876,6 +5199,18 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   });
 });
 
+document.getElementById('ct-search').addEventListener('input', debounce(() => { ctUI.q = document.getElementById('ct-search').value; renderCompanyTiers(); }, 150));
+document.getElementById('ct-filter-tier').addEventListener('change', e => { ctUI.tier = e.target.value; renderCompanyTiers(); });
+document.getElementById('ct-mine').addEventListener('change', e => { ctUI.mine = e.target.checked; renderCompanyTiers(); });
+document.getElementById('ct-unrated').addEventListener('change', e => { ctUI.unrated = e.target.checked; renderCompanyTiers(); });
+document.getElementById('ct-refresh').addEventListener('click', () => ctEnsureLoaded(true));
+document.getElementById('ct-table').addEventListener('click', e => {
+  const th = e.target.closest('th[data-ct]');
+  if(!th) return;
+  const k = th.dataset.ct;
+  if(ctUI.sort === k) ctUI.dir = -ctUI.dir; else { ctUI.sort = k; ctUI.dir = (k === 'name') ? 1 : -1; }
+  renderCompanyTiers();
+});
 document.getElementById('home-search').addEventListener('input', debounce(renderHome, 200));
 document.getElementById('home-filter-dataset').addEventListener('change', renderHome);
 document.getElementById('home-filter-status').addEventListener('change', renderHome);
