@@ -1214,6 +1214,7 @@ function ctKey(name){
   const base = normalizeCompanyName(name ? String(name).replace(/\u201A\u00C4\u00F4/g, "'") : name);
   if(!base || base === 'Unknown') return '';
   const k = String(base).toUpperCase().replace(/[.,'’]/g, ' ').replace(/[&+]/g, ' AND ')
+    .replace(/\bU ?S ?A\b/g, 'USA')   // "U.S.A." / "U S A" → USA (Home Depot U S A vs USA were two rows)
     .replace(/\b(LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|THE)\b/g, ' ').replace(/\s+/g, ' ').trim();
   if(!k || /^(UNKNOWN|UNK|NONE|N A|NA|NOT AVAILABLE)$/.test(k)) return '';   // placeholders, not companies
   for(const [re, to] of CT_ALIASES) if(re.test(k)) return to;
@@ -5176,7 +5177,7 @@ function placeValueHTML(byDayAll){
 }
 function ctBand(ev){ let sc = 1; for(const b of ctScores.bands) if(ev >= b) sc++; return sc; }
 function ctScoreFor(rawKeys, c){
-  for(const k of rawKeys){ const e = ctScores.companies[k]; if(e) return { score:e[0], ev:e[1], conf:e[2], why:e[4], h: (e.length > 9 && e[7] > 0) ? { n:e[7], paid:e[9], dism:e[10], dflt:e[11], mix:e[12], raw:e[13], o:e[14] } : null }; }
+  for(const k of rawKeys){ const e = ctScores.companies[k]; if(e) return { score:e[0], ev:e[1], conf:e[2], why:e[4], pat:e[16] || null, h: (e.length > 9 && e[7] > 0) ? { n:e[7], paid:e[9], dism:e[10], dflt:e[11], mix:e[12], raw:e[13], o:e[14], pat:e[16] || null } : null }; }
   const ev = (c && c.rated ? c.eb : ctScores.noRecordEV) * (1 - ctScores.dqBase);
   return { score:ctBand(ev), ev, conf: (c && c.rated) ? 'high' : 'none', why: (c && c.rated) ? 'NYC idling record only' : 'not in the last score build — estimate for a company nothing is known about' };
 }
@@ -5386,7 +5387,7 @@ function renderCompanyTiers(){
     const h = (!c && r.s && r.s.h) ? r.s.h : null;   // too few NYC tickets to rank — still show their record from the offline lookup
     const hp = x => ctPct(x / h.n);
     const htip = h ? ' title="From the offline lookup (violations 2022–24): ' + h.n + ' NYC idling ticket' + (h.n > 1 ? 's' : '') + ' — too few to rank, so no # and the $ is raw, not shrunk"' : '';
-    return '<tr data-ctname="' + esc(r.name) + '"' + (o ? ' class="ct-mine"' : '') + ' title="Click for this company\'s full NYC ticket history">' +
+    return '<tr data-ctname="' + esc(r.name) + '"' + (r.s && r.s.pat ? ' data-ctpat="' + esc(r.s.pat) + '"' : '') + (o ? ' class="ct-mine"' : '') + ' title="Click for this company\'s full NYC ticket history">' +
       '<td class="num">' + ((c && c.rated) ? c.rank : '—') + '</td>' +
       '<td title="' + esc(tip) + '">' + esc(r.name) + '</td>' + scCells +
       '<td class="num"' + htip + '>' + ((c && c.rated) ? money(c.eb) : h ? '<span style="color:var(--dim)">' + money(h.raw) + '</span>' : '—') + '</td>' +
@@ -5416,9 +5417,9 @@ const CT_DETAIL_PAGE = 500;
 let ctDetail = null;   // { name, pat, years, rows, total, loading, err }
 function ctDetailWhere(pat){ return "upper(respondent_last_name) like '" + pat + "' AND charge_1_code_description like '%IDLING%' AND issuing_agency like 'DEP%'"; }
 function ctDetailUrl(params){ return CT_BASE + '?' + Object.entries(params).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&'); }
-async function ctOpenDetail(name){
+async function ctOpenDetail(name, scorePat){
   const box = document.getElementById('ct-detail');
-  const pat = ctLikePattern(name);
+  const pat = (scorePat && /^[A-Z0-9%' ]+$/.test(scorePat)) ? scorePat.replace(/'/g, "''") : ctLikePattern(name);   // the offline lookup's own pattern, so the panel and the table count the same tickets
   ctDetail = { name, pat, years: null, rows: [], total: 0, loading: true, err: null };
   box.style.display = ''; renderCtDetail(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   if(!pat){ ctDetail.loading = false; ctDetail.err = 'This name is too short or generic to search NYC by safely.'; renderCtDetail(); return; }
@@ -5513,7 +5514,7 @@ document.getElementById('ct-unrated').addEventListener('change', e => { ctUI.unr
 document.getElementById('ct-refresh').addEventListener('click', () => ctEnsureLoaded(true));
 document.getElementById('ct-table').addEventListener('click', e => {
   const tr = e.target.closest('tr[data-ctname]');
-  if(tr && !e.target.closest('a')){ ctOpenDetail(tr.dataset.ctname); return; }
+  if(tr && !e.target.closest('a')){ ctOpenDetail(tr.dataset.ctname, tr.dataset.ctpat); return; }
   const th = e.target.closest('th[data-ct]');
   if(!th) return;
   const k = th.dataset.ct;
