@@ -675,14 +675,13 @@
   <section class="tab-content" id="tab-tiers">
     <div class="sp-status" id="ct-status"></div>
     <div class="grid" id="ct-score-stats"></div>
-    <div class="grid" id="ct-stats"></div>
 
     <div class="panel">
       <h2>Company Rankings <span class="tag" id="ct-table-tag"></span></h2>
       <p class="desc">Every respondent with 100+ idling summonses in NYC's open data (violations 2022–24), ranked by <b>expected bounty per summons</b>. Click a column to sort. Your own filings sit alongside, so you can see where your effort is going.</p>
       <div class="search-row">
         <input type="search" id="ct-search" placeholder="Search company…">
-        <select id="ct-filter-tier"><option value="">All tiers</option><option value="S">Tier S</option><option value="A">Tier A</option><option value="B">Tier B</option><option value="C">Tier C</option><option value="D">Tier D</option><option value="U">Unrated</option></select>
+        <select id="ct-filter-tier"><option value="">All scores</option><option value="b8">Score 8–10</option><option value="b6">Score 6–7</option><option value="b4">Score 4–5</option><option value="b1">Score 1–3</option><option value="none">No records found</option></select>
         <label class="check-row"><input type="checkbox" id="ct-mine"> Only companies I've filed on</label>
         <label class="check-row"><input type="checkbox" id="ct-unrated"> Include unrated (&lt;100 summonses)</label>
         <button class="btn ghost" id="ct-refresh" title="Re-pull the aggregates from NYC OATH open data">Refresh NYC data</button>
@@ -691,12 +690,11 @@
     </div>
 
     <div class="panel">
-      <h2>How the tiers are built</h2>
+      <h2>How the scores are built</h2>
       <div class="desc" style="margin-top:0;">
         <p><b>Expected $ / summons</b> = 25% × (penalties on tickets that ended <i>paid in full</i>) ÷ <i>all</i> tickets for that respondent. Dismissed, unpaid and still-defaulted tickets count as $0, and a respondent who defaults and later pays ($1,000–$2,000 penalty) is worth more than one who pays on time ($350–$600) — the same quantity the Estimated Grand Total uses for open rows.</p>
-        <p><b>Shrinkage:</b> small samples are pulled toward the citywide average (as if 40 extra summonses sat at the mean), so a respondent with a handful of lucky tickets can't land in tier S. Respondents under 100 summonses are left <i>unrated</i>.</p>
+        <p><b>Shrinkage:</b> small samples are pulled toward the citywide average (as if 40 extra summonses sat at the mean), so a respondent with a handful of lucky tickets can't look like a star. Respondents under 100 NYC summonses have no NYC-only ranking (<i>—</i>), but still get a score from the model above.</p>
         <p><b>Company score (1–10)</b> = expected dollars per <i>filed complaint</i> for every company you've filed on: the company's own NYC idling record (when it has one) blended with a prior, times the chance DEP doesn't disqualify it. Bands: &lt;$20 = 1, then $35 / $55 / $75 / $95 / $120 / $150 / $190 / $240. A company with no records anywhere still gets an estimate — the average for a company nothing is known about — and is labelled <i>none</i> in the Conf. column. Built offline by <code>tools/build_scores.js</code> from free public sources (NYC OATH, NYS corporations, FMCSA) into <code>company_scores.json</code>; honest finding: beyond a company's own ticket record, those sources add very little predictive power, so most of the score's lift comes from NYC's real history with the company.</p>
-        <p><b>Tiers</b> are multiples of the citywide mean: S ≥ 2.0×, A ≥ 1.25×, B ≥ 0.8×, C ≥ 0.35×, D below that.</p>
         <p><b>Reading the columns:</b> <i>Paid</i> is the share of tickets that ended paid in full; <i>Dismissed</i> is the share thrown out at hearing (tour buses, rental cars passing tickets to renters, ambulettes…); <i>Still default</i> is collection risk; <i>2nd/3rd</i> is the share of repeat-offense tickets (those pay more).</p>
         <p class="note">Caveats: NYC's data can't separate citizen-submitted tickets from DEP-inspector tickets, so this is the respondent's behaviour across all idling tickets. 2022–24 tickets are mostly but not fully resolved — some defaults will still pay, so values lean slightly low. NYC truncates respondent names at 30 characters and spells companies several ways; common ones are rolled up (Con Ed, Brinks, USIC, FedEx, Verizon…) and anything unrecognised stays separate. Respondent names are no longer published for 2026 tickets, so this is historical reputation, not a live feed.</p>
       </div>
@@ -1200,7 +1198,8 @@ const CT_ALIASES = [
   [/^(SPECTRUM|CHARTER COMMUNICATIONS)\b/, 'CHARTER COMMUNICATIONS'], [/^EMPIRE CITY SUBWAY\b/, 'EMPIRE CITY SUBWAY']
 ];
 function ctKey(name){
-  const base = normalizeCompanyName(name);
+  // the sheet has an encoding glitch: an apostrophe arrives as the three characters ‚Äô ("D‚ÄôONFRIO", "GIO‚ÄôS")
+  const base = normalizeCompanyName(name ? String(name).replace(/\u201A\u00C4\u00F4/g, "'") : name);
   if(!base || base === 'Unknown') return '';
   const k = String(base).toUpperCase().replace(/[.,'’]/g, ' ').replace(/[&+]/g, ' AND ')
     .replace(/\b(LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|THE)\b/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1208,23 +1207,86 @@ function ctKey(name){
   for(const [re, to] of CT_ALIASES) if(re.test(k)) return to;
   return k;
 }
-/* The join key: spacing/punctuation/"AND" differences ("A L CESSPOOL" vs "AL CESSPOOL", "CHEF'S" vs "CHEFS") vanish. */
-function ctLoose(k){ return String(k).replace(/\bAND\b/g, ' ').replace(/[^A-Z0-9]/g, ''); }
+/* The join key — stage 1 of de-duplicating company names. Differences that don't change WHO the company is vanish:
+   spacing / punctuation / "AND" ("A L CESSPOOL" = "AL CESSPOOL" = "A AND L CESSPOOL"), possessive S ("TONY S" = "TONYS"),
+   plurals ("INSTALLATIONS"), generic trailing words (SERVICE(S), GROUP, HOLDINGS, ENTERPRISES, INDUSTRIES, INTERNATIONAL,
+   USA, NY / NEW YORK, SOLUTIONS...), ELECTRICAL = ELECTRIC, a trailing roman numeral or sheet-truncated suffix (II, IN, LL),
+   and ';' (the sheet's field separator leaks into some names). Industry words (ELECTRIC, MECHANICAL, CONSTRUCTION) are
+   deliberately kept: "EPIC ELECTRIC" and "EPIC MECHANICAL" are different companies. If stripping would leave under 6 characters
+   it isn't applied ("METRO GROUP" stays distinct from "METRO"). */
+const CT_GENERIC = /\b(SERVICES?|SVCS?|GROUP|HOLDINGS?|ENTERPRISES?|INDUSTRIES|INTERNATIONAL|INTL|USA|AMERICA|NYC|NY|NEW YORK|SOLUTIONS|COMPANIES|ASSOCIATES|OF)\b/g;
+function ctLoose(k){
+  const prep = x => {
+    const toks = String(x).replace(/;/g, ' ').replace(/\bAND\b/g, ' ').replace(/\bELECTRICAL\b/g, 'ELECTRIC').replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(t => t && t !== 'S');
+    while(toks.length > 1 && /^(I|II|III|IV|IN|LL|LP|L|P)$/.test(toks[toks.length - 1])) toks.pop();
+    return toks.map(t => (t.length >= 5 && /[^S]S$/.test(t)) ? t.slice(0, -1) : t).join('');
+  };
+  const strong = prep(String(k).replace(CT_GENERIC, ' '));
+  return strong.length >= 6 ? strong : prep(k);
+}
+/* Stage 2: typos and truncations that no per-name rule can see ("DONELLY MECHANICAL" ~ "DONNELLY MECHANICAL", "BERGEN MARBLE
+   AND GRANTE" ~ "...GRANITE", a name cut off mid-word). Conservative: both keys 10+ chars, same first 3 letters, identical digits
+   (so "U-HAUL TITLING 1" and "2" stay apart), and either 1 edit (2 if both are 20+ chars) or the shorter (14+ chars) is a
+   prefix of the longer. The heavier key (more tickets / filings) becomes the canonical one. weights: Map key -> weight. */
+function ctLev(a, b, max){
+  if(Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for(let i = 1; i <= a.length; i++){
+    const cur = [i]; let best = i;
+    for(let j = 1; j <= b.length; j++){ cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); if(cur[j] < best) best = cur[j]; }
+    if(best > max) return max + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function ctCluster(weights){
+  const keys = [...weights.keys()].sort((a, b) => (weights.get(b) - weights.get(a)) || (a < b ? -1 : 1));
+  const parent = new Map(keys.map(k => [k, k]));
+  const find = k => { while(parent.get(k) !== k){ parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  const buckets = new Map();
+  for(const k of keys) if(k.length >= 10){ const b = k.slice(0, 3); (buckets.get(b) || buckets.set(b, []).get(b)).push(k); }
+  const digits = k => k.replace(/[^0-9]/g, '');
+  for(const g of buckets.values()) for(let i = 0; i < g.length; i++) for(let j = i + 1; j < g.length; j++){
+    const a = g[i], b = g[j];
+    if(digits(a) !== digits(b)) continue;
+    const longer = a.length >= b.length ? a : b, shorter = longer === a ? b : a;
+    const d = ctLev(a, b, 2);
+    if(d <= 1 || (d === 2 && shorter.length >= 20) || (shorter.length >= 14 && longer.startsWith(shorter) && !/^SUPPL/.test(longer.slice(shorter.length)))){   // "BENFIELD ELECTRIC" vs "...ELECTRIC SUPPLY" is a different business
+      const ra = find(a), rb = find(b);
+      if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); }
+    }
+  }
+  const out = new Map();
+  for(const k of keys) out.set(k, find(k));
+  return out;
+}
 function ctTierOf(ratio){ for(const [t, cut] of CT_CUTS) if(ratio >= cut) return t; return 'D'; }
 /* data = { rows: [{name,n,pen,paid,dism,dflt,third,second}], total: {n,pen} } as cached from NYC. */
-function ctBuild(data){
+function ctBuild(data, extraKeys){
   const gN = (data.total && data.total.n) || 0;
   const gMean = gN ? CACP_SHARE * data.total.pen / gN : 0;
-  const map = new Map();
+  const map0 = new Map();
   for(const r of (data.rows || [])){
     const disp = ctKey(r.name);
     if(!disp) continue;
     const k = ctLoose(disp);
-    let c = map.get(k);
-    if(!c){ c = { key:k, name:disp, topN:0, n:0, pen:0, paid:0, dism:0, dflt:0, third:0, second:0, spellings:0 }; map.set(k, c); }
+    let c = map0.get(k);
+    if(!c){ c = { key:k, name:disp, topN:0, n:0, pen:0, paid:0, dism:0, dflt:0, third:0, second:0, spellings:0 }; map0.set(k, c); }
     if((+r.n || 0) > c.topN){ c.topN = +r.n || 0; c.name = disp; }   // show the biggest spelling's rolled-up name
     c.n += +r.n || 0; c.pen += +r.pen || 0; c.paid += +r.paid || 0; c.dism += +r.dism || 0;
     c.dflt += +r.dflt || 0; c.third += +r.third || 0; c.second += +r.second || 0; c.spellings++;
+  }
+  // stage 2: typos / truncations, clustered across NYC's names AND the keys you pass in (your own filings)
+  const weights = new Map();
+  for(const [k, c] of map0) weights.set(k, c.n);
+  for(const k of (extraKeys || [])) if(!weights.has(k)) weights.set(k, 0.5);
+  const canon = ctCluster(weights);
+  const map = new Map();
+  for(const [k, c0] of map0){
+    const rk = canon.get(k) || k; const c = map.get(rk);
+    if(!c){ map.set(rk, Object.assign({}, c0, { key: rk })); continue; }
+    if(c0.topN > c.topN){ c.topN = c0.topN; c.name = c0.name; }
+    for(const f of ['n', 'pen', 'paid', 'dism', 'dflt', 'third', 'second', 'spellings']) c[f] += c0[f];
   }
   const cos = [...map.values()].filter(c => c.n > 0);
   for(const c of cos){
@@ -1242,17 +1304,7 @@ function ctBuild(data){
   for(const c of rated){ const b = byTier[c.tier]; b.companies++; b.n += c.n; b.bounty += CACP_SHARE * c.pen; ratedN += c.n; ratedBounty += CACP_SHARE * c.pen; }
   const cuts = {}; for(const [t, cut] of CT_CUTS) cuts[t] = cut * gMean;
   const byKey = new Map(cos.map(c => [c.key, c]));
-  // NYC cut names off at 30 chars, so a long key of yours can be the full spelling of one of theirs.
-  const longKeys = cos.filter(c => c.key.length >= 24).sort((a, b) => b.n - a.n);
-  const memo = new Map();
-  const resolve = k => {
-    if(byKey.has(k)) return k;
-    if(memo.has(k)) return memo.get(k);
-    let hit = k;
-    for(const c of longKeys) if(k.startsWith(c.key)){ hit = c.key; break; }
-    memo.set(k, hit);
-    return hit;
-  };
+  const resolve = k => canon.get(k) || k;   // any of your join keys -> the canonical company key
   return { cos, rated, byTier, gMean, gN, ratedN, ratedBounty, cuts, byKey, resolve };
 }
 
@@ -5004,7 +5056,7 @@ let ctData = null;                       // {fetchedAt, years, rows, total, buil
 let ctState = { loading:false, error:'', tried:false, built:null, builtKey:'' };
 const ctUI = { sort:'eb', dir:-1, q:'', tier:'', mine:false, unrated:false, sortChosen:false };
 /* company_scores.json — built offline by tools/build_scores.js (1-10 score + expected $ per filed complaint for every
-   company you've filed on). Optional: without it the tab shows the NYC tiers only. */
+   company you've filed on). Optional: without it the tab shows NYC's raw numbers only. */
 let ctScores = null, ctScoresTried = false;
 async function ctLoadScores(){
   if(ctScoresTried) return;
@@ -5102,19 +5154,32 @@ async function ctEnsureLoaded(force){
 function ctOnTab(name){ if(name === 'tiers'){ ctLoadScores(); ctEnsureLoaded(false); } }
 
 /* Your side of the join: your filings grouped by the same ctKey as NYC's respondents. */
-function ctMine(T){
+/* Your side of the join, in two steps: group your filings by the stage-1 join key (ctLoose), then — once NYC's names and
+   yours have been clustered together by ctBuild (typos / truncations) — fold groups that landed on the same company. */
+function ctMineRaw(){
   const m = new Map();
   for(const r of appData.merged){
     const disp = ctKey(r.company);
     if(!disp) continue;
-    const k = T.resolve(ctLoose(disp));
+    const k = ctLoose(disp);
     let o = m.get(k);
-    if(!o){ o = { key:k, name:disp, filings:0, got:0, est:0, received:0, raw:new Set() }; m.set(k, o); }
-    o.raw.add(ctLoose(disp));
+    if(!o){ o = { key:k, name:disp, filings:0, got:0, est:0, received:0 }; m.set(k, o); }
     o.filings++;
     if(r._rowType === 'paid' || r._rowType === 'requested') o.got++;
     if(r._rowType === 'paid') o.received += r.paidToMe || 0;
     o.est += expectedPayoutFor(r);
+  }
+  return m;
+}
+function ctMine(raw, T){
+  const m = new Map();
+  for(const [k0, g] of raw){
+    const k = T.resolve(k0);
+    let o = m.get(k);
+    if(!o){ o = { key:k, name:g.name, topF:g.filings, filings:0, got:0, est:0, received:0, raw:new Set() }; m.set(k, o); }
+    if(g.filings > o.topF){ o.topF = g.filings; o.name = g.name; }   // display the spelling you use most
+    o.raw.add(k0);
+    o.filings += g.filings; o.got += g.got; o.est += g.est; o.received += g.received;
   }
   return m;
 }
@@ -5123,7 +5188,7 @@ function ctPct(x){ return x == null ? '—' : (x * 100).toFixed(x < 0.1 && x > 0
 function renderCompanyTiers(){
   const root = document.getElementById('tab-tiers');
   if(!root) return;
-  const statusEl = document.getElementById('ct-status'), statsEl = document.getElementById('ct-stats'), tbl = document.getElementById('ct-table');
+  const statusEl = document.getElementById('ct-status'), tbl = document.getElementById('ct-table');
   const refreshBtn = document.getElementById('ct-refresh');
   if(refreshBtn) refreshBtn.disabled = ctState.loading;
 
@@ -5134,26 +5199,12 @@ function renderCompanyTiers(){
   else st = 'No NYC data yet. ' + (ctState.error ? '' : 'Opening this tab pulls it.');
   if(ctState.error) st += '<div class="sp-err">Couldn\'t reach NYC (' + esc(ctState.error) + ')' + (ctData ? ' — showing the ' + (ctData.builtin ? 'built-in copy' : 'last saved copy') + ' instead.' : '.') + ' Try “Refresh NYC data”.</div>';
   statusEl.innerHTML = st;
-  if(!ctData){ statsEl.innerHTML = ''; tbl.innerHTML = ''; document.getElementById('ct-table-tag').textContent = ''; return; }
+  if(!ctData){ document.getElementById('ct-score-stats').innerHTML = ''; tbl.innerHTML = ''; document.getElementById('ct-table-tag').textContent = ''; return; }
 
-  const key = ctData.fetchedAt + ':' + ctData.rows.length;
-  if(ctState.builtKey !== key){ ctState.built = ctBuild(ctData); ctState.builtKey = key; }
-  const T = ctState.built, mine = ctMine(T);
-
-  // ---- tier cards: where NYC's money is vs where YOUR filings are ----
-  let myTotal = 0; mine.forEach(o => { myTotal += o.filings; });
-  const myBy = {}; for(const t of ['S', 'A', 'B', 'C', 'D', 'U']) myBy[t] = { filings:0, est:0, cos:0 };
-  mine.forEach(o => { const c = T.byKey.get(o.key); const t = (c && c.rated) ? c.tier : 'U'; myBy[t].filings += o.filings; myBy[t].est += o.est; myBy[t].cos++; });
-  const cutTxt = { S:'≥ ' + money(T.cuts.S), A:money(T.cuts.A) + '–' + money(T.cuts.S), B:money(T.cuts.B) + '–' + money(T.cuts.A), C:money(T.cuts.C) + '–' + money(T.cuts.B), D:'< ' + money(T.cuts.C) };
-  const card = t => {
-    const b = T.byTier[t], my = myBy[t];
-    return '<div class="stat-card"><div class="label"><span class="tier tier-' + t + '">' + t + '</span> ' + cutTxt[t] + ' / summons</div>' +
-      '<div class="value blue">' + my.filings.toLocaleString() + '</div>' +
-      '<div class="sub">your filings (' + (myTotal ? Math.round(100 * my.filings / myTotal) : 0) + '%) · est. ' + money(my.est) + '<br>NYC: ' + b.companies + (b.companies === 1 ? ' company' : ' companies') + ' · ' + Math.round(100 * b.n / (T.ratedN || 1)) + '% of summonses · ' + Math.round(100 * b.bounty / (T.ratedBounty || 1)) + '% of bounty</div></div>';
-  };
-  statsEl.innerHTML = ['S', 'A', 'B', 'C', 'D'].map(card).join('') +
-    '<div class="stat-card"><div class="label"><span class="tier tier-U">—</span> Unrated</div><div class="value blue">' + myBy.U.filings.toLocaleString() + '</div>' +
-    '<div class="sub">your filings (' + (myTotal ? Math.round(100 * myBy.U.filings / myTotal) : 0) + '%) · est. ' + money(myBy.U.est) + '<br>' + myBy.U.cos + (myBy.U.cos === 1 ? ' company' : ' companies') + ' with under ' + CT_MIN_N + ' NYC summonses</div></div>';
+  const rawMine = ctMineRaw();
+  const key = ctData.fetchedAt + ':' + ctData.rows.length + ':' + rawMine.size;
+  if(ctState.builtKey !== key){ ctState.built = ctBuild(ctData, [...rawMine.keys()]); ctState.builtKey = key; }
+  const T = ctState.built, mine = ctMine(rawMine, T);
 
   // ---- score cards: your filings by company score ----
   const scEl = document.getElementById('ct-score-stats');
@@ -5185,8 +5236,11 @@ function renderCompanyTiers(){
   const view = rows.filter(r => {
     if(q && !r.name.toUpperCase().includes(q)) return false;
     if(ctUI.mine && !r.o) return false;
-    const tier = (r.c && r.c.rated) ? r.c.tier : 'U';
-    if(ctUI.tier && tier !== ctUI.tier) return false;
+    if(ctUI.tier){
+      if(!r.s) return false;
+      const sc = r.s.score, f = ctUI.tier;
+      if(f === 'none' ? r.s.conf !== 'none' : !(f === 'b8' ? sc >= 8 : f === 'b6' ? sc >= 6 && sc <= 7 : f === 'b4' ? sc >= 4 && sc <= 5 : sc <= 3)) return false;
+    }
     return true;
   });
   const val = (r, k) => {
@@ -5213,20 +5267,19 @@ function renderCompanyTiers(){
     const d = (typeof x === 'string') ? x.localeCompare(y) : (x - y);
     return (d || (val(b, 'eb') - val(a, 'eb')) || a.name.localeCompare(b.name)) * (d ? ctUI.dir : 1);
   });
-  const cols = [['rank', '#'], ['name', 'Company'], ['eb', 'Tier'], ['eb', 'Exp. $ / summons'], ['n', 'NYC summonses'], ['paidPct', 'Paid'], ['dismPct', 'Dismissed'], ['dfltPct', 'Still default'], ['mix', '2nd/3rd'], ['mine', 'Your filings'], ['got', 'Paid + requested'], ['est', 'Your est. total']];
+  const cols = [['rank', '#'], ['name', 'Company'], ['eb', 'NYC $ / summons'], ['n', 'NYC summonses'], ['paidPct', 'Paid'], ['dismPct', 'Dismissed'], ['dfltPct', 'Still default'], ['mix', '2nd/3rd'], ['mine', 'Your filings'], ['got', 'Paid + requested'], ['est', 'Your est. total']];
   if(ctScores) cols.splice(2, 0, ['sev', 'Score'], ['sev', 'Est $ / filing'], ['conf', 'Conf.']);
   const arrow = k => ctUI.sort === k ? (ctUI.dir < 0 ? ' ▼' : ' ▲') : '';
   const arrowShown = new Set();
-  const head = '<thead><tr>' + cols.map(([k, l], i) => { const a = (!arrowShown.has(k) && l !== 'Tier') ? arrow(k) : ''; arrowShown.add(k); return '<th data-ct="' + k + '"' + (i > 1 ? ' class="num"' : '') + '>' + l + a + '</th>'; }).join('') + '</tr></thead>';
+  const head = '<thead><tr>' + cols.map(([k, l], i) => { const a = !arrowShown.has(k) ? arrow(k) : ''; arrowShown.add(k); return '<th data-ct="' + k + '"' + (i > 1 ? ' class="num"' : '') + '>' + l + a + '</th>'; }).join('') + '</tr></thead>';
   const MAXROWS = 500;
   const body = view.slice(0, MAXROWS).map(r => {
-    const c = r.c, o = r.o, tier = (c && c.rated) ? c.tier : 'U';
+    const c = r.c, o = r.o;
     const scCells = ctScores ? '<td class="num" title="' + esc(r.s.why) + '"><span class="tier tier-' + (r.s.score >= 8 ? 'S' : r.s.score >= 6 ? 'A' : r.s.score >= 4 ? 'B' : r.s.score >= 2 ? 'C' : 'D') + '">' + r.s.score + '</span></td><td class="num">' + money(r.s.ev) + '</td><td class="num" title="' + esc(r.s.why) + '">' + (r.s.conf === 'none' ? 'no records' : r.s.conf) + '</td>' : '';
     const tip = c ? (c.spellings + ' spelling' + (c.spellings > 1 ? 's' : '') + ' in NYC data · raw ' + money(c.raw) + ' per summons before shrinkage · ' + c.n.toLocaleString() + ' summonses') : 'No NYC history under this name';
     return '<tr' + (o ? ' class="ct-mine"' : '') + '>' +
       '<td class="num">' + ((c && c.rated) ? c.rank : '—') + '</td>' +
       '<td title="' + esc(tip) + '">' + esc(r.name) + '</td>' + scCells +
-      '<td><span class="tier tier-' + tier + '">' + (tier === 'U' ? '—' : tier) + '</span></td>' +
       '<td class="num">' + ((c && c.rated) ? money(c.eb) : '—') + '</td>' +
       '<td class="num">' + (c ? c.n.toLocaleString() : '—') + '</td>' +
       '<td class="num">' + (c ? ctPct(c.paidPct) : '—') + '</td>' +
