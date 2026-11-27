@@ -1207,18 +1207,29 @@ const CT_ALIASES = [
   [/^HUGH O ?KANE\b/, 'HUGH OKANE ELECTRIC'], [/^MERCHANTS? (S )?(FLEET|AUTOMOTIVE)\b/, 'MERCHANTS FLEET'],
   [/^LOOMIS\b/, 'LOOMIS ARMORED'], [/^HYLAN\b/, 'HYLAN DATACOM'], [/^A ?L CESSPOOL\b/, 'A L CESSPOOL SERVICE'],
   [/^PIECE OF CAKE MOVING\b/, 'PIECE OF CAKE MOVING'], [/^CALL ?A ?HEAD\b/, 'CALL-A-HEAD'], [/^U ?T ?F TRUCKING\b/, 'UTF TRUCKING'],
-  [/^(SPECTRUM|CHARTER COMMUNICATIONS)\b/, 'CHARTER COMMUNICATIONS'], [/^EMPIRE CITY SUBWAY\b/, 'EMPIRE CITY SUBWAY']
+  [/^(SPECTRUM|CHARTER COMMUNICATIONS)\b/, 'CHARTER COMMUNICATIONS'], [/^EMPIRE CITY SUBWAY\b/, 'EMPIRE CITY SUBWAY'],
+  // seen in idling.nyc's curated groups (11/27/2026): typos / spacings of the same big respondents
+  [/^CONSO\S* ED\S*/, 'CON EDISON'], [/^CON ED[SI]\S*/, 'CON EDISON'],
+  [/^(\d{4} )?U ?-? ?H(AU|UA)L\b/, 'UHAUL'],                 // U-Haul, U HAUL, U-HUAL, "2013 U-HAUL TITLING 2" — idling.nyc groups them all
+  [/^(RYDER|R[UI]DER TRUCK)\b/, 'RYDER'], [/^(FED ?-?EX|FEFEDERAL EXPRESS|FEDRAL EXPRESS|FEDERAL EXPRESS)\b/, 'FEDEX']
 ];
+/* NYC cuts names at 30 chars and the cut often lands inside a word ("INCORPO RATED", "TOPV IEW"); rebuild the legal-suffix words
+   with an optional space between any two letters so they strip like their whole forms. */
+const CT_SPLIT_SUFFIX = ['INCORPORATED', 'CORPORATION', 'COMPANY', 'LIMITED'].map(w => new RegExp('\\b' + w.split('').join(' ?') + '\\b', 'g'));
+const CT_DBA = /\s+(DBA|D B A|D\/B\/A|AKA|A K A|A\/K\/A|C\/O|C O)\s.*$/;   // "X DBA Y" / "X c/o Y": the respondent is X
 function ctKey(name){
   // the sheet has an encoding glitch: an apostrophe arrives as the three characters ‚Äô ("D‚ÄôONFRIO", "GIO‚ÄôS")
   const base = normalizeCompanyName(name ? String(name).replace(/\u201A\u00C4\u00F4/g, "'") : name);
   if(!base || base === 'Unknown') return '';
   const k = String(base).toUpperCase().replace(/[.,'’]/g, ' ').replace(/[&+]/g, ' AND ')
     .replace(/\bU ?S ?A\b/g, 'USA')   // "U.S.A." / "U S A" → USA (Home Depot U S A vs USA were two rows)
-    .replace(/\b(LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|THE)\b/g, ' ').replace(/\s+/g, ' ').trim();
-  if(!k || /^(UNKNOWN|UNK|NONE|N A|NA|NOT AVAILABLE)$/.test(k)) return '';   // placeholders, not companies
-  for(const [re, to] of CT_ALIASES) if(re.test(k)) return to;
-  return k;
+    .replace(/\b(IN C|LL C|COR P)\b/g, ' ');
+  let k2 = k; for(const re of CT_SPLIT_SUFFIX) k2 = k2.replace(re, ' ');
+  k2 = k2.replace(/\b(LLC|INC|CORP|CO|LTD|LP|LLP|THE)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  if(!k2 || /^(UNKNOWN|UNK|NONE|N A|NA|NOT AVAILABLE)$/.test(k2)) return '';   // placeholders, not companies
+  for(const [re, to] of CT_ALIASES) if(re.test(k2)) return to;
+  const noDba = k2.replace(CT_DBA, '').trim();
+  return noDba.length >= 4 ? noDba : k2;
 }
 /* The join key — stage 1 of de-duplicating company names. Differences that don't change WHO the company is vanish:
    spacing / punctuation / "AND" ("A L CESSPOOL" = "AL CESSPOOL" = "A AND L CESSPOOL"), possessive S ("TONY S" = "TONYS"),
@@ -1228,10 +1239,18 @@ function ctKey(name){
    deliberately kept: "EPIC ELECTRIC" and "EPIC MECHANICAL" are different companies. If stripping would leave under 6 characters
    it isn't applied ("METRO GROUP" stays distinct from "METRO"). */
 const CT_GENERIC = /\b(SERVICES?|SVCS?|GROUP|HOLDINGS?|ENTERPRISES?|INDUSTRIES|INTERNATIONAL|INTL|USA|AMERICA|NYC|NY|NEW YORK|SOLUTIONS|COMPANIES|ASSOCIATES|OF)\b/g;
+/* Trailing words that describe the kind of business rather than WHICH business: "HUB TRUCK" = "HUB TRUCK RENTAL" = "HUB TRUCK LEASING"
+   (idling.nyc's curated groups merge exactly these). Only stripped from the END and only while 6+ characters remain, so "RYDER TRUCK"
+   keeps TRUCK and "HOME DEPOT EQUIPMENT SERVICES" (EQUIPMENT is not a descriptor) stays apart from "HOME DEPOT". */
+const CT_DESC = new Set(['RENTAL', 'RENTALS', 'LEASING', 'LEASE', 'LEASES', 'TRUCK', 'TRUCKS', 'TRUCKING', 'TRANSPORT', 'TRANSPORTATION', 'LOGISTICS', 'MOVING', 'STORAGE', 'STORE', 'STORES', 'MAINTENANCE', 'MAINT', 'DELIVERY',
+  'HEATING', 'COOLING', 'CONDITIONING',                                   // "ARISTA AIR" = "ARISTA AIR CONDITIONING", "ABR PLUMBING" = "ABR PLUMBING AND HEATING"
+  'BROOKLYN', 'QUEENS', 'BRONX', 'MANHATTAN', 'NJ', 'CT', 'CONNECTICUT', 'JERSEY', 'LONG', 'ISLAND', 'NORTH', 'CITY',   // a branch's place name
+  'COMP']);                                                                   // sheet/NYC truncation of COMPANY
 function ctLoose(k){
   const prep = x => {
     const toks = String(x).replace(/;/g, ' ').replace(/\bAND\b/g, ' ').replace(/\bELECTRICAL\b/g, 'ELECTRIC').replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(t => t && t !== 'S');
     while(toks.length > 1 && /^(I|II|III|IV|IN|LL|LP|L|P)$/.test(toks[toks.length - 1])) toks.pop();
+    while(toks.length > 1 && CT_DESC.has(toks[toks.length - 1]) && toks.slice(0, -1).join('').length >= 6) toks.pop();
     return toks.map(t => (t.length >= 5 && /[^S]S$/.test(t)) ? t.slice(0, -1) : t).join('');
   };
   const strong = prep(String(k).replace(CT_GENERIC, ' '));
@@ -1245,31 +1264,52 @@ function ctLoose(k){
 const CT_GENERIC_NAMES = new Set(['INDUSTRIAL', 'ENVIRONMENTAL', 'DEPENDABLE', 'DIVERSIFIED', 'SCIENTIFIC', 'FIRSTCLASS', 'BROWNSTONE', 'UNIVERSAL',
   'PREMIER', 'SUPERIOR', 'PRECISION', 'QUALITY', 'CERTIFIED', 'APPROVED', 'NATIONAL', 'AMERICAN', 'CITYWIDE', 'STATEWIDE', 'EMPIRESTATE',
   'ADVANCED', 'ALLAMERICAN', 'ACCURATE', 'PROFESSIONAL', 'COMMERCIAL', 'RESIDENTIAL', 'METROPOLITAN', 'INTERNATIONAL', 'GENERAL', 'ELITE',
-  'CONSOLIDATED', 'INDEPENDENT', 'UNITEDSTATES', 'NORTHEAST', 'NORTHEASTERN', 'SOUTHERN', 'WESTERN', 'EASTERN', 'ATLANTIC', 'PACIFIC']);
-function ctLev(a, b, max){
+  'CONSOLIDATED', 'INDEPENDENT', 'UNITEDSTATES', 'NORTHEAST', 'NORTHEASTERN', 'SOUTHERN', 'WESTERN', 'EASTERN', 'ATLANTIC', 'PACIFIC',
+  'STANDARD', 'DELIVERY', 'ABSOLUTE', 'ACTION', 'UNITED', 'CLASSIC', 'PREFERRED', 'MASTER', 'EXPRESS', 'METRO', 'CITY', 'ROYAL', 'GOLDEN', 'GLOBAL', 'ULTIMATE', 'PRIME', 'ALLSTAR', 'DIAMOND']);
+function ctLev(a, b, max){   // optimal-string-alignment: a swapped pair of letters counts as ONE typo
   if(Math.abs(a.length - b.length) > max) return max + 1;
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  let prev2 = null, prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for(let i = 1; i <= a.length; i++){
     const cur = [i]; let best = i;
-    for(let j = 1; j <= b.length; j++){ cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); if(cur[j] < best) best = cur[j]; }
+    for(let j = 1; j <= b.length; j++){
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if(prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      if(cur[j] < best) best = cur[j];
+    }
     if(best > max) return max + 1;
-    prev = cur;
+    prev2 = prev; prev = cur;
   }
   return prev[b.length];
+}
+/* idling.nyc's hand-curated "crosswalk" groups (company_crosswalk.json: [[name, name, ...], ...]). Two names in the SAME group are the
+   same company, full stop; two names in DIFFERENT groups are never merged by the heuristics below (that's how "HOME DEPOT" and
+   "HOME DEPOT EQUIPMENT SERVICES" stay apart). Names not on their site fall back to the heuristics. */
+let CT_XW = null;   // join key (ctLoose) -> group index
+function ctSetCrosswalk(groups){
+  const m = new Map();
+  (groups || []).forEach((g, i) => { for(const n of g){ const d = ctKey(n); if(!d) continue; const k = ctLoose(d); if(!m.has(k)) m.set(k, i); } });
+  CT_XW = m.size ? m : null;
 }
 function ctCluster(weights){
   const keys = [...weights.keys()].sort((a, b) => (weights.get(b) - weights.get(a)) || (a < b ? -1 : 1));
   const parent = new Map(keys.map(k => [k, k]));
   const find = k => { while(parent.get(k) !== k){ parent.set(k, parent.get(parent.get(k))); k = parent.get(k); } return k; };
+  const xg = k => CT_XW ? CT_XW.get(k) : undefined;
+  const sameBlocked = (a, b) => { const x = xg(a), y = xg(b); return x !== undefined && y !== undefined && x !== y; };   // two DIFFERENT curated groups
+  if(CT_XW){   // curated groups first: everything in one group becomes one company
+    const first = new Map();
+    for(const k of keys){ const g = xg(k); if(g === undefined) continue; if(!first.has(g)){ first.set(g, k); continue; }
+      const ra = find(first.get(g)), rb = find(k); if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); } }
+  }
   const buckets = new Map();
-  for(const k of keys) if(k.length >= 10){ const b = k.slice(0, 3); (buckets.get(b) || buckets.set(b, []).get(b)).push(k); }
+  for(const k of keys) if(k.length >= 7){ const b = k.slice(0, 3); (buckets.get(b) || buckets.set(b, []).get(b)).push(k); }
   const digits = k => k.replace(/[^0-9]/g, '');
   for(const g of buckets.values()) for(let i = 0; i < g.length; i++) for(let j = i + 1; j < g.length; j++){
     const a = g[i], b = g[j];
-    if(digits(a) !== digits(b)) continue;
+    if(a.length < 10 || b.length < 10 || digits(a) !== digits(b) || sameBlocked(a, b)) continue;
     const longer = a.length >= b.length ? a : b, shorter = longer === a ? b : a;
     const d = ctLev(a, b, 2);
-    if(d <= 1 || (d === 2 && shorter.length >= 20) || (shorter.length >= 14 && longer.startsWith(shorter) && !/^SUPPL/.test(longer.slice(shorter.length)))){   // "BENFIELD ELECTRIC" vs "...ELECTRIC SUPPLY" is a different business
+    if(d <= 1 || (d === 2 && shorter.length >= 20) || (shorter.length >= 14 && longer.startsWith(shorter))){   // "BENFIELD ELECTRIC" = "BENFIELD ELECTRIC SUPPLY" (Alex 11/27/2026)
       const ra = find(a), rb = find(b);
       if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); }
     }
@@ -1279,9 +1319,9 @@ function ctCluster(weights){
   // (so "DEPENDABLE" -> two different Dependable companies is left alone) and it isn't a generic word several unrelated
   // companies share ("INDUSTRIAL", "ENVIRONMENTAL", "FIRST CLASS"...).
   for(const g of buckets.values()) for(const sh of g){
-    if(sh.length >= 14 || CT_GENERIC_NAMES.has(sh)) continue;
+    if(sh.length >= 14 || sh.length < 7 || CT_GENERIC_NAMES.has(sh)) continue;
     const roots = new Set();
-    for(const l of g) if(l !== sh && l.length > sh.length && l.startsWith(sh) && !/^SUPPL/.test(l.slice(sh.length)) && digits(l) === digits(sh)) roots.add(find(l));
+    for(const l of g) if(l !== sh && l.length > sh.length && l.startsWith(sh) && digits(l) === digits(sh) && !sameBlocked(sh, l)) roots.add(find(l));
     if(roots.size !== 1) continue;
     const ra = find(sh), rb = [...roots][0];
     if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); }
@@ -1818,7 +1858,15 @@ function complaintCell(rec){
         much slower the pipeline runs now. T(age) = 1 − G(age ÷ warp): a row 300 days old in
         a 2×-slower era is only "150 days along" in historical terms, so it keeps most of its
         value; a 2023 zombie is far past the tail either way and fades to $0. */
-const DEFAULT_COLLECTION = 0.5; // defaulted = finding of violation; NYC's eventual collection ≈ coin-flip
+const DEFAULT_COLLECTION = 0.5; // fallback only (too few of your own defaults paid to measure) — see defaultCollectionFor()
+/* A defaulted ticket is NOT a coin-flip forever. Measured on your own 584 defaults (11/27/2026, Kaplan-Meier on hearing-date →
+   paid-date, still-defaulted rows censored): 1.7% had paid by 6 months, 10% by 1y, 32% by 2y, 37% by 2.5y, and then it FLATTENS
+   (37.6% at 3.5y). So a default that is 3+ years old and unpaid is worth ~1%, not 50%, while a fresh one is worth ~37%.
+   Value = P(eventually pays | still unpaid at this age) = (F∞ − F(age)) / (1 − F(age)). */
+const DEFAULT_COLLECT_MIN_EVENTS = 40, DEFAULT_COLLECT_FLOOR = 0.01;
+/* Back-test of the open-row base (11/27/2026): your 999 filings from Nov-2022…Oct-2024 (2.1-4 years old, ~all 1st offense) are worth
+   $87.1 each once paid + requested + defaults-by-age-curve + scheduled are counted, against the open base's $87.9 (base × Q) — a 0.99
+   ratio, so no calibration factor is applied. (With the old flat ×0.5 on defaults it looked 1.12 — that over-valued defaults.) */
 let SURV = null;
 function median(sortedArr){ return sortedArr.length ? sortedArr[Math.floor(sortedArr.length/2)] : null; }
 function buildSurvival(){
@@ -1844,11 +1892,38 @@ function buildSurvival(){
     Q: (dq + ticketed) >= 100 ? 1 - dq / (dq + ticketed) : 0.94,
     allAges,
     warp: (histMed && curMed) ? Math.max(0.25, curMed / histMed) : 1,
-    resolvedN: moneyed + dead
+    resolvedN: moneyed + dead,
+    dflt: buildDefaultCurve()
   };
   console.log('[survival v3] W =', SURV.W === null ? 'n/a' : (SURV.W*100).toFixed(1)+'%',
     '(' + SURV.resolvedN + ' resolved) · hist median conversion', histMed ? histMed.toFixed(0)+'d' : '—',
     '· current median', curMed ? curMed.toFixed(0)+'d' : '—', '· warp ×' + SURV.warp.toFixed(2));
+}
+function buildDefaultCurve(){
+  const Y = 365.25 * 86400000, now = Date.now(), pts = []; let nEv = 0;
+  for(const r of appData.merged){
+    const h = parseDate(r.hearingDate); if(!h) continue;
+    const c = categorize(r);
+    if(c === 'paid' && (r.paidToMe || 0) >= 200){ const p = parseDate(r.paidDate); if(p && p >= h){ pts.push({ t:(p - h) / Y, e:1 }); nEv++; } }   // a paid DEFAULT pays $250+ (1st-offense on-time pays $87.50)
+    else if(c === 'defaulted') pts.push({ t:Math.max(0, (now - h) / Y), e:0 });
+  }
+  if(nEv < DEFAULT_COLLECT_MIN_EVENTS) return null;
+  pts.sort((a, b) => a.t - b.t);
+  let atRisk = pts.length, S = 1; const curve = [];
+  for(let i = 0; i < pts.length;){
+    const t = pts[i].t; let d = 0, c = 0, j = i;
+    while(j < pts.length && pts[j].t === t){ if(pts[j].e) d++; else c++; j++; }
+    if(d) S *= 1 - d / atRisk;
+    atRisk -= d + c; curve.push([t, 1 - S]); i = j;
+  }
+  return { curve, Finf: curve.length ? curve[curve.length - 1][1] : 0, nEv, n: pts.length };
+}
+function defaultCollectionFor(rec){
+  if(!SURV) buildSurvival();
+  const D = SURV.dflt; if(!D) return DEFAULT_COLLECTION;
+  const h = parseDate(rec.hearingDate), age = h ? Math.max(0, (Date.now() - h.getTime()) / (365.25 * 86400000)) : 0;
+  let F = 0; for(const [t, f] of D.curve){ if(t <= age) F = f; else break; }
+  return Math.max(DEFAULT_COLLECT_FLOOR, Math.min(D.Finf, (D.Finf - F) / Math.max(1e-6, 1 - F)));
 }
 function survivalP(ageDays){
   if(!SURV) buildSurvival();
@@ -1910,7 +1985,7 @@ function expectedPayoutFor(rec){
   if(cat === 'paid') return rec.paidToMe || rec.payout || payoutFor(rec);
   const base = (cat === 'open' || cat === 'scheduled') ? openBasePayout(rec) : payoutFor(rec);
   if(cat === 'requested' || cat === 'pifUnclaimed') return base;
-  if(cat === 'defaulted') return base * DEFAULT_COLLECTION;
+  if(cat === 'defaulted') return base * defaultCollectionFor(rec);
   // Build the survival model first, like the open branch below does: reading SURV while it's null
   // silently used the 0.85 fallback for any scheduled row evaluated before the first open row, so
   // the total depended on row order right after SURV was reset (a ~$2 wobble on ~$580k).
@@ -1935,9 +2010,9 @@ function egtBreakdown(){
 function egtBreakdownText(){
   if(!SURV) buildSurvival();
   const b = egtBreakdown();
-  const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×0.5', scheduled:'Scheduled ×Q', open:'Open ×Q×T'};
+  const L = {paid:'Paid', requested:'Requested', pifUnclaimed:'PIF unclaimed', defaulted:'Defaulted ×age-curve', scheduled:'Scheduled ×Q', open:'Open ×Q×T'};
   const lines = Object.keys(L).map(k => L[k] + ': ' + b[k].n + ' rows = ' + money(b[k].ev));
-  const survLine = 'Q=' + (SURV.Q*100).toFixed(1) + '% · W=' + (SURV.W==null?'n/a':(SURV.W*100).toFixed(1)+'%') + ' · warp=×' + SURV.warp.toFixed(2) + ' · resolved=' + SURV.resolvedN;
+  const survLine = 'Q=' + (SURV.Q*100).toFixed(1) + '% · W=' + (SURV.W==null?'n/a':(SURV.W*100).toFixed(1)+'%') + ' · warp=×' + SURV.warp.toFixed(2) + ' · resolved=' + SURV.resolvedN + (SURV.dflt ? ' · default pays eventually ' + (SURV.dflt.Finf*100).toFixed(0) + '% (n=' + SURV.dflt.n + ')' : '');
   return lines.join(' · ') + '\n' + survLine;
 }
 /* Incident-time basis: the From clip timestamp is when the violation actually HAPPENED.
@@ -5092,9 +5167,19 @@ const ctUI = { sort:'eb', dir:-1, q:'', tier:'', mine:false, unrated:false, sort
 /* company_scores.json — built offline by tools/build_scores.js (1-10 score + expected $ per filed complaint for every
    company you've filed on). Optional: without it the tab shows NYC's raw numbers only. */
 let ctScores = null, ctScoresTried = false;
+/* idling.nyc's curated company groups (company_crosswalk.json) — the authority for "are these two names the same company". Optional. */
+async function ctLoadCrosswalk(){
+  try{
+    const res = await fetchWithTimeout('company_crosswalk.json?v=' + Date.now(), 20000);
+    if(!res.ok) return;
+    const j = await res.json();
+    if(j && Array.isArray(j.groups)){ ctSetCrosswalk(j.groups); ctState.builtKey = null; recScoreMemo.clear(); }
+  }catch(e){ /* no crosswalk file — heuristics only */ }
+}
 async function ctLoadScores(){
   if(ctScoresTried) return;
   ctScoresTried = true;
+  await ctLoadCrosswalk();
   try{
     const res = await fetchWithTimeout('company_scores.json?v=' + Date.now(), 20000);
     if(!res.ok) return;
