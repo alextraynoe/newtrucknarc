@@ -5171,7 +5171,7 @@ function placeValueHTML(byDayAll){
 }
 function ctBand(ev){ let sc = 1; for(const b of ctScores.bands) if(ev >= b) sc++; return sc; }
 function ctScoreFor(rawKeys, c){
-  for(const k of rawKeys){ const e = ctScores.companies[k]; if(e) return { score:e[0], ev:e[1], conf:e[2], why:e[4] }; }
+  for(const k of rawKeys){ const e = ctScores.companies[k]; if(e) return { score:e[0], ev:e[1], conf:e[2], why:e[4], h: (e.length > 9 && e[7] > 0) ? { n:e[7], paid:e[9], dism:e[10], dflt:e[11], mix:e[12], raw:e[13], o:e[14] } : null }; }
   const ev = (c && c.rated ? c.eb : ctScores.noRecordEV) * (1 - ctScores.dqBase);
   return { score:ctBand(ev), ev, conf: (c && c.rated) ? 'high' : 'none', why: (c && c.rated) ? 'NYC idling record only' : 'not in the last score build — estimate for a company nothing is known about' };
 }
@@ -5352,7 +5352,7 @@ function renderCompanyTiers(){
       case 'sev': return r.s ? r.s.ev : -1;
       case 'conf': return r.s ? ({ none:0, low:1, medium:2, high:3 }[r.s.conf] || 0) : 0;
       case 'eb': return (c && c.rated) ? c.eb : -Infinity;
-      case 'n': return c ? c.n : -1;
+      case 'n': return c ? c.n : (r.s && r.s.h) ? r.s.h.n : -1;
       case 'paidPct': return c ? c.paidPct : -1;
       case 'dismPct': return c ? c.dismPct : -1;
       case 'dfltPct': return c ? c.dfltPct : -1;
@@ -5378,15 +5378,18 @@ function renderCompanyTiers(){
     const c = r.c, o = r.o;
     const scCells = ctScores ? '<td class="num" title="' + esc(r.s.why) + '"><span class="tier tier-' + (r.s.score >= 8 ? 'S' : r.s.score >= 6 ? 'A' : r.s.score >= 4 ? 'B' : r.s.score >= 2 ? 'C' : 'D') + '">' + r.s.score + '</span></td><td class="num">' + money(r.s.ev) + '</td><td class="num" title="' + esc(r.s.why) + '">' + (r.s.conf === 'none' ? 'no records' : r.s.conf) + '</td>' : '';
     const tip = c ? (c.spellings + ' spelling' + (c.spellings > 1 ? 's' : '') + ' in NYC data · raw ' + money(c.raw) + ' per summons before shrinkage · ' + c.n.toLocaleString() + ' summonses') : 'No NYC history under this name';
+    const h = (!c && r.s && r.s.h) ? r.s.h : null;   // too few NYC tickets to rank — still show their record from the offline lookup
+    const hp = x => ctPct(x / h.n);
+    const htip = h ? ' title="From the offline lookup (violations 2022–24): ' + h.n + ' NYC idling ticket' + (h.n > 1 ? 's' : '') + ' — too few to rank, so no # and the $ is raw, not shrunk"' : '';
     return '<tr' + (o ? ' class="ct-mine"' : '') + '>' +
       '<td class="num">' + ((c && c.rated) ? c.rank : '—') + '</td>' +
       '<td title="' + esc(tip) + '">' + esc(r.name) + '</td>' + scCells +
-      '<td class="num">' + ((c && c.rated) ? money(c.eb) : '—') + '</td>' +
-      '<td class="num">' + (c ? c.n.toLocaleString() : '—') + '</td>' +
-      '<td class="num">' + (c ? ctPct(c.paidPct) : '—') + '</td>' +
-      '<td class="num">' + (c ? ctPct(c.dismPct) : '—') + '</td>' +
-      '<td class="num">' + (c ? ctPct(c.dfltPct) : '—') + '</td>' +
-      '<td class="num">' + (c ? ctPct(c.mix) : '—') + '</td>' +
+      '<td class="num"' + htip + '>' + ((c && c.rated) ? money(c.eb) : h ? '<span style="color:var(--dim)">' + money(h.raw) + '</span>' : '—') + '</td>' +
+      '<td class="num">' + (c ? c.n.toLocaleString() : h ? h.n.toLocaleString() : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.paidPct) : h ? hp(h.paid) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.dismPct) : h ? hp(h.dism) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.dfltPct) : h ? hp(h.dflt) : '—') + '</td>' +
+      '<td class="num">' + (c ? ctPct(c.mix) : h ? hp(h.mix) : '—') + '</td>' +
       '<td class="num">' + (o ? o.filings.toLocaleString() : '—') + '</td>' +
       '<td class="num">' + (o ? o.got.toLocaleString() : '—') + '</td>' +
       '<td class="num">' + (o ? money(o.est) : '—') + '</td></tr>';
