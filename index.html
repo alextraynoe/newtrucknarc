@@ -473,6 +473,14 @@
         <tbody></tbody>
       </table></div>
     </div>
+    <div class="panel" id="spnm-panel">
+      <h2>Self-Pursued — Paid in Full <span style="display:flex; gap:8px; align-items:center;"><button class="btn orange" id="btn-export-sp">📧 Export for Email (50%)</button><span class="tag" id="spnm-tag"></span></span></h2>
+      <p class="desc">Cases you pursued at OATH yourself that NYC shows as paid. You get <b>50%</b> of the penalty (late fees excluded). The export's subject says so, and it lists the link to each summons image so you can open it and attach it. Cases you've already ticked "share requested" on the Self-Pursue tab are listed but left out of the export.</p>
+      <div class="table-wrap"><table id="spnm-table">
+        <thead><tr><th>Summons #</th><th>Company</th><th>Penalty Collected</th><th>My 50%</th><th>Summons Image</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
     <div class="panel">
       <h2>Requested but Not Yet Paid <span class="tag" id="pendreq-tag">Sorted by longest wait first</span></h2>
       <p class="desc">Estimated arrival based on how long your <b>recent</b> paid requests took (the lag has drifted a lot over time, so only the latest requests are used).</p>
@@ -828,7 +836,7 @@
 <div class="modal-overlay" id="export-overlay">
   <div class="modal wide">
     <h3>📧 Export Summons for Email <span class="close-x" data-close="export-overlay">✕</span></h3>
-    <p class="desc" style="margin-bottom:14px;">Only rows whose NYC hearing status is <b>exactly</b> "Paid in Full" and that aren't in your Requested/Paid logs are included, split into groups of 8 per identity.</p>
+    <p class="desc" id="export-desc" style="margin-bottom:14px;">Only rows whose NYC hearing status is <b>exactly</b> "Paid in Full" and that aren't in your Requested/Paid logs are included, split into groups of 8 per identity.</p>
     <div id="export-body"></div>
   </div>
 </div>
@@ -3164,6 +3172,21 @@ function spPayoutEmail(views, me){
       '\n\nPlease let me know if you need anything further to process this.\n\nThank you,\n' + me.name
   };
 }
+// The PDF image of the summons itself (the ticket finder's own "View Image of Summons/Notice" button opens exactly this).
+function spImageUrl(s){ return 'https://a820-ecbticketfinder.nyc.gov/GetViolationImage?violationNumber=' + encodeURIComponent(s); }
+// Self-pursued cases NYC shows paid, as one export for the New Money tab: subject says you get 50%, body is the share request,
+// and a separate block lists the summons-image links to open and attach. Pure (no DOM) so the tests cover it.
+function spExportData(views, me, dateStr){
+  const rows = views.filter(v => v.paid && v.c.summons && !v.requested);
+  const money2 = n => '$' + (Math.round(n * 100) / 100).toFixed(2);
+  const subject = 'Complaint Payment ' + dateStr + ' - SELF-PURSUED, I receive 50% of the penalty (' + rows.length + ' summons' + (rows.length === 1 ? '' : 'es') + ')';
+  const lines = rows.map(v => v.c.summons + (v.c.company ? ' — ' + v.c.company : '') + ' — penalty collected ' + money2(spPenaltyCollected(v.o)) + ' — my 50% share ' + money2(v.share));
+  const body = 'Hello, I am the citizen petitioner who pursued the following ' + (rows.length === 1 ? 'summons' : 'summonses') + ' at OATH myself under the Citizens Air Complaint Program. ' +
+    (rows.length === 1 ? 'It has' : 'They have') + ' been paid. Because I pursued ' + (rows.length === 1 ? 'it' : 'them') + ' directly, my share is 50% of the penalty collected (not the usual 25%), excluding late fees.\n\n' +
+    lines.join('\n') + '\n\nTotal share due to me: ' + money2(rows.reduce((t, v) => t + v.share, 0)) + '\n\n' + me.name + '\nMailing address: ' + me.address;
+  const images = rows.map(v => v.c.summons + '  ' + spImageUrl(v.c.summons)).join('\n');
+  return { rows, to: SP_PAYOUT_EMAIL, subject, body, images, count: rows.length, total: rows.reduce((t, v) => t + v.share, 0) };
+}
 // One batched OATH request for every summons (chunked only past 200, far beyond today's 70).
 // Mutates `sp`. A summons NYC has already reported is never un-known by a later response that
 // omits it, and a failed chunk leaves its last known rows in place instead of blanking them.
@@ -3422,6 +3445,34 @@ function getNewMoneyRows(){
   return appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFull(r));
 }
 
+function renderSPNewMoney(){
+  const views = spViews().filter(v => v.paid && v.c.summons);
+  const exp = spExportData(views, spMe(), fmtDateMDY(new Date()));
+  document.getElementById('spnm-tag').textContent = views.length ? views.length + ' paid · ' + money(views.reduce((t, v) => t + v.share, 0)) + ' yours · ' + exp.count + ' not yet requested' : 'none paid yet';
+  document.getElementById('btn-export-sp').disabled = !exp.count;
+  document.querySelector('#spnm-table tbody').innerHTML = views.map(v => `<tr>
+    <td>${summonsLink(v.c.summons)}</td><td>${esc(v.c.company) || '—'}</td><td>${money(spPenaltyCollected(v.o))}</td>
+    <td><b>${money(v.share)}</b> <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span></td>
+    <td><a href="${esc(spImageUrl(v.c.summons))}" target="_blank" rel="noopener">View image (PDF)</a></td>
+    <td>${v.requested ? 'Share requested' : 'Not yet requested'}</td></tr>`).join('') || `<tr><td colspan="6" class="empty">No self-pursued case is paid in full yet.</td></tr>`;
+}
+function renderSPExportModal(){
+  const exp = spExportData(spViews().filter(v => v.paid && v.c.summons), spMe(), fmtDateMDY(new Date()));
+  document.getElementById('export-desc').innerHTML = 'Self-pursued cases NYC shows as <b>paid</b> that you haven\'t marked "share requested". You receive <b>50%</b> of the penalty on these.';
+  const body = document.getElementById('export-body');
+  if(!exp.count){ body.innerHTML = '<div class="empty">No paid self-pursued case is waiting for a share request.</div>'; return; }
+  body.innerHTML = `<div class="export-group"><b>Self-Pursued — ${exp.count} summons${exp.count === 1 ? '' : 'es'} · ${esc(money(exp.total))} yours</b>
+    ${copyBlockHTML('To', exp.to, 'sp-exp-to')}
+    ${copyBlockHTML('Email Subject', exp.subject, 'sp-exp-subj')}
+    ${copyBlockHTML('Email Body', exp.body, 'sp-exp-body')}
+    ${copyBlockHTML('Summons images to attach (open each link, save the PDF)', exp.images, 'sp-exp-img')}
+    <div class="table-wrap"><table><thead><tr><th>Summons #</th><th>Image</th></tr></thead><tbody>${exp.rows.map(v => `<tr><td>${summonsLink(v.c.summons)}</td><td><a href="${esc(spImageUrl(v.c.summons))}" target="_blank" rel="noopener">Open summons image</a></td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+  body.querySelectorAll('[data-copy]').forEach(btn => btn.addEventListener('click', () => {
+    const ta = document.getElementById(btn.dataset.copy); ta.select(); document.execCommand('copy');
+    const orig = btn.textContent; btn.textContent = '✅ Copied!'; setTimeout(() => { btn.textContent = orig; }, 2000);
+  }));
+}
 function renderNewMoney(){
   const newMoney = getNewMoneyRows();
   const tbody1 = document.querySelector('#newmoney-table tbody');
@@ -3429,6 +3480,8 @@ function renderNewMoney(){
     <tr${r._pifRestoredFrom ? ` title="${esc('A source currently reports "' + r._pifRestoredFrom + '" — kept as Paid in Full because this ticket was confirmed paid earlier.')}"` : ''}><td>${datasetBadge(r.dataset)}</td>
     <td>${summonsLink(r.summons)}</td><td>${complaintCell(r)}</td><td>${esc(r.company)}</td><td>${money(r.paidAmount)}</td><td>${money(r.payout)}${r._selfPursue ? ' <span class="badge dataset-at" title="Self-pursued: you get 50% of what OATH collects">50%</span>' : ''}</td><td>${esc(r.hearingDate)||'—'}</td></tr>`
   ).join('') || `<tr><td colspan="7" class="empty">Nothing new right now.</td></tr>`;
+
+  renderSPNewMoney();
 
   const payLag = getLagModels().payment;
   const avgLag = payLag.avg;
@@ -3741,7 +3794,7 @@ function spWire(){
    EXACTLY 'paid in full' (stricter than the general New Money list's loose match — a known
    discrepancy in the old app, preserved intentionally) with no Paid/Requested log entry. */
 function buildExportGroups(){
-  const eligible = appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && isPaidInFullExact(r));
+  const eligible = appData.merged.filter(r => !r._inPaidLog && !r._inReqLog && !r._selfPursue && isPaidInFullExact(r));
   const groups = [];
   for(const dsKey of ['atnyc','at','mbt']){
     const label = DATASET_LABELS[dsKey]; // matching value — must stay the real sheet identity
@@ -3764,6 +3817,7 @@ function copyBlockHTML(title, text, id){
 
 function renderExportModal(){
   const groups = buildExportGroups();
+  const d = document.getElementById('export-desc'); if(d && d.dataset.orig) d.innerHTML = d.dataset.orig;
   const body = document.getElementById('export-body');
   if(!groups.length){
     body.innerHTML = `<div class="empty">No summonses currently match: hearing status exactly "Paid in Full" with no Requested/Paid entry.</div>`;
@@ -5637,6 +5691,7 @@ function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', ()=>closeModal(el.dataset.close)));
 document.getElementById('btn-rules').addEventListener('click', ()=>openModal('rules-overlay'));
 document.getElementById('btn-export-email').addEventListener('click', ()=>{ renderExportModal(); openModal('export-overlay'); });
+document.getElementById('btn-export-sp').addEventListener('click', ()=>{ const d = document.getElementById('export-desc'); if(d && !d.dataset.orig) d.dataset.orig = d.innerHTML; renderSPExportModal(); openModal('export-overlay'); });
 document.getElementById('btn-settings').addEventListener('click', ()=>{
   document.getElementById('cfg-pubid').value = CFG.pubId;
   document.getElementById('cfg-gid-atnyc').value = CFG.gids.atnyc;
