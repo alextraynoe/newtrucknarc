@@ -192,6 +192,9 @@
   @media (max-width:640px){ #ct-stats, #ct-score-stats{grid-template-columns:repeat(2,1fr);} }
   #ct-table th.num, #ct-table td.num{text-align:right;}
   #ct-table tr.ct-mine td:nth-child(2){font-weight:700;}
+  #ct-table tbody tr[data-ctname]{cursor:pointer;}
+  #ct-table tbody tr[data-ctname]:hover td{background:rgba(120,120,120,.10);}
+  #ct-detail .ct-sel{margin:0 0 10px;}
   a.sum-link{color:var(--blue2); font-weight:600; text-decoration:underline; text-underline-offset:2px;}
   a.sum-link:hover{color:var(--orange2);}
   tr.row-dismissed a.sum-link{color:#fff;}
@@ -695,6 +698,8 @@
       </div>
       <div class="table-wrap"><table id="ct-table"></table></div>
     </div>
+
+    <div class="panel" id="ct-detail" style="display:none;"></div>
 
     <div class="panel">
       <h2>How the scores are built</h2>
@@ -5381,7 +5386,7 @@ function renderCompanyTiers(){
     const h = (!c && r.s && r.s.h) ? r.s.h : null;   // too few NYC tickets to rank — still show their record from the offline lookup
     const hp = x => ctPct(x / h.n);
     const htip = h ? ' title="From the offline lookup (violations 2022–24): ' + h.n + ' NYC idling ticket' + (h.n > 1 ? 's' : '') + ' — too few to rank, so no # and the $ is raw, not shrunk"' : '';
-    return '<tr' + (o ? ' class="ct-mine"' : '') + '>' +
+    return '<tr data-ctname="' + esc(r.name) + '"' + (o ? ' class="ct-mine"' : '') + ' title="Click for this company\'s full NYC ticket history">' +
       '<td class="num">' + ((c && c.rated) ? c.rank : '—') + '</td>' +
       '<td title="' + esc(tip) + '">' + esc(r.name) + '</td>' + scCells +
       '<td class="num"' + htip + '>' + ((c && c.rated) ? money(c.eb) : h ? '<span style="color:var(--dim)">' + money(h.raw) + '</span>' : '—') + '</td>' +
@@ -5397,6 +5402,78 @@ function renderCompanyTiers(){
   tbl.innerHTML = head + '<tbody>' + (view.length > MAXROWS ? '' : '') + (body || '<tr><td colspan="' + cols.length + '" style="text-align:center;color:var(--dim);padding:18px;">Nothing matches.</td></tr>') + '</tbody>';
   document.getElementById('ct-table-tag').textContent = (view.length > MAXROWS ? 'top ' + MAXROWS + ' of ' : '') + view.length.toLocaleString() + (view.length > MAXROWS ? ' matching' : '') + ' of ' + rows.length.toLocaleString() + ' companies · citywide avg ' + money(T.gMean) + ' / summons';
 }
+
+/* ---- Company detail: every DEP idling ticket NYC has under this name, ALL years (live, on click only) ---- */
+const CT_SUFFIX = /\b(LLC|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|LTD|LP|LLP|THE|OF|AND)\b/g;
+function ctLikePattern(raw){   // same recipe as tools/lookup_companies.js: NYC cuts names at 30 chars, so only the first ~26 can be matched
+  const all = String(raw).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(CT_SUFFIX, ' ').split(/\s+/).filter(Boolean);
+  const toks = []; let len = 0;
+  for(const t of all.slice(0, 4)){ if(len + t.length + (toks.length ? 1 : 0) > 26 && toks.length) break; toks.push(t); len += t.length + (toks.length > 1 ? 1 : 0); }
+  if(!toks.length || toks.join('').length < 4) return null;
+  return toks.join('%').replace(/'/g, "''") + '%';
+}
+const CT_DETAIL_PAGE = 500;
+let ctDetail = null;   // { name, pat, years, rows, total, loading, err }
+function ctDetailWhere(pat){ return "upper(respondent_last_name) like '" + pat + "' AND charge_1_code_description like '%IDLING%' AND issuing_agency like 'DEP%'"; }
+function ctDetailUrl(params){ return CT_BASE + '?' + Object.entries(params).map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&'); }
+async function ctOpenDetail(name){
+  const box = document.getElementById('ct-detail');
+  const pat = ctLikePattern(name);
+  ctDetail = { name, pat, years: null, rows: [], total: 0, loading: true, err: null };
+  box.style.display = ''; renderCtDetail(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if(!pat){ ctDetail.loading = false; ctDetail.err = 'This name is too short or generic to search NYC by safely.'; renderCtDetail(); return; }
+  const mine = ctDetail, W = ctDetailWhere(pat);
+  try{
+    const years = await ctGetJSON(ctDetailUrl({ '$select': "date_extract_y(violation_date) as y,count(*) as n,sum(case(hearing_status='PAID IN FULL',1,true,0)) as paid,sum(case(hearing_result='DISMISSED',1,true,0)) as dism,sum(case(hearing_status='DEFAULTED',1,true,0)) as dflt,sum(case(charge_1_code_description like '%2ND%' OR charge_1_code_description like '%3RD%',1,true,0)) as rep,sum(case(hearing_status='PAID IN FULL',penalty_imposed,true,0)) as pen", '$where': W, '$group': 'y', '$order': 'y' }));
+    if(ctDetail !== mine) return;
+    mine.years = years.map(r => ({ y: r.y, n: +r.n || 0, paid: +r.paid || 0, dism: +r.dism || 0, dflt: +r.dflt || 0, rep: +r.rep || 0, pen: +r.pen || 0 }));
+    mine.total = mine.years.reduce((a, r) => a + r.n, 0);
+    renderCtDetail();
+    await ctDetailMore();
+  }catch(e){ if(ctDetail === mine){ mine.err = 'Couldn’t reach NYC (' + (e.message || e) + '). Click the company again to retry.'; mine.loading = false; renderCtDetail(); } }
+}
+async function ctDetailMore(){
+  const mine = ctDetail; if(!mine || !mine.pat) return;
+  mine.loading = true; renderCtDetail();
+  try{
+    const rows = await ctGetJSON(ctDetailUrl({ '$select': 'ticket_number,violation_date,hearing_status,hearing_result,penalty_imposed,paid_amount,additional_penalties_or_late_fees,charge_1_code_description,violation_location_borough,violation_location_house,violation_location_street_name', '$where': ctDetailWhere(mine.pat), '$order': 'violation_date DESC, ticket_number', '$limit': String(CT_DETAIL_PAGE), '$offset': String(mine.rows.length) }));
+    if(ctDetail !== mine) return;
+    mine.rows = mine.rows.concat(rows); mine.loading = false; mine.err = null;
+  }catch(e){ if(ctDetail === mine){ mine.loading = false; mine.err = 'Couldn’t load tickets (' + (e.message || e) + ').'; } }
+  renderCtDetail();
+}
+function ctTierOfDesc(d){ d = String(d || '').toUpperCase(); return /3RD/.test(d) ? '3rd' : /2ND/.test(d) ? '2nd' : '1st'; }
+function renderCtDetail(){
+  const box = document.getElementById('ct-detail'), d = ctDetail;
+  if(!d){ box.style.display = 'none'; return; }
+  let h = '<h2>' + esc(d.name) + ' <span class="tag">NYC DEP idling tickets, all years' + (d.total ? ' · ' + d.total.toLocaleString() + ' total' : '') + '</span> <button class="btn ghost" id="ct-detail-close" style="float:right">Close</button></h2>';
+  h += '<p class="desc">Matched on NYC’s respondent name <code>' + esc(d.pat || '') + '</code> (NYC truncates names at 30 characters and spells companies many ways, so a very generic name can pull in a neighbour). Recent years are mostly unresolved. “$ bounty” is 25% of penalties on tickets that ended <b>paid in full</b>.</p>';
+  if(d.err) h += '<div class="desc" style="color:var(--danger,#d9534f)">' + esc(d.err) + '</div>';
+  if(d.years){
+    if(!d.years.length) h += '<div class="desc">NYC has no DEP idling tickets under this name.</div>';
+    else {
+      h += '<div class="table-wrap"><table><thead><tr><th>Year</th><th class="num">Tickets</th><th class="num">Paid</th><th class="num">Dismissed</th><th class="num">Still default</th><th class="num">2nd/3rd</th><th class="num">$ bounty</th><th class="num">$ / ticket</th></tr></thead><tbody>';
+      const pc = (x, n) => n ? ctPct(x / n) : '—';
+      let T = { n: 0, paid: 0, dism: 0, dflt: 0, rep: 0, pen: 0 };
+      for(const r of d.years){ for(const k in T) T[k] += r[k]; h += '<tr><td>' + esc(r.y) + '</td><td class="num">' + r.n.toLocaleString() + '</td><td class="num">' + pc(r.paid, r.n) + '</td><td class="num">' + pc(r.dism, r.n) + '</td><td class="num">' + pc(r.dflt, r.n) + '</td><td class="num">' + pc(r.rep, r.n) + '</td><td class="num">' + money(r.pen * 0.25) + '</td><td class="num">' + money(r.pen * 0.25 / r.n) + '</td></tr>'; }
+      h += '<tr style="font-weight:700"><td>All</td><td class="num">' + T.n.toLocaleString() + '</td><td class="num">' + pc(T.paid, T.n) + '</td><td class="num">' + pc(T.dism, T.n) + '</td><td class="num">' + pc(T.dflt, T.n) + '</td><td class="num">' + pc(T.rep, T.n) + '</td><td class="num">' + money(T.pen * 0.25) + '</td><td class="num">' + money(T.pen * 0.25 / T.n) + '</td></tr></tbody></table></div>';
+    }
+  } else if(d.loading) h += '<div class="desc">Loading from NYC…</div>';
+  if(d.rows.length){
+    h += '<h3 style="margin:14px 0 6px;">Tickets (newest first)</h3><div class="table-wrap"><table><thead><tr><th>Violation date</th><th>Summons</th><th>Offense</th><th>Where</th><th>Status</th><th>Result</th><th class="num">Penalty</th><th class="num">Paid</th></tr></thead><tbody>';
+    for(const r of d.rows){
+      const dt = String(r.violation_date || '').slice(0, 10), where = [r.violation_location_house, r.violation_location_street_name, r.violation_location_borough].filter(Boolean).join(' ');
+      h += '<tr><td>' + esc(dt) + '</td><td>' + summonsLink(r.ticket_number) + '</td><td>' + ctTierOfDesc(r.charge_1_code_description) + '</td><td>' + esc(where) + '</td><td>' + esc(r.hearing_status || '') + '</td><td>' + esc(r.hearing_result || '') + '</td><td class="num">' + money(+r.penalty_imposed || 0) + '</td><td class="num">' + money(+r.paid_amount || 0) + '</td></tr>';
+    }
+    h += '</tbody></table></div>';
+    if(d.rows.length < d.total) h += '<p style="margin-top:8px"><button class="btn ghost" id="ct-detail-more"' + (d.loading ? ' disabled' : '') + '>' + (d.loading ? 'Loading…' : 'Load ' + Math.min(CT_DETAIL_PAGE, d.total - d.rows.length).toLocaleString() + ' more') + '</button> <span class="desc">' + d.rows.length.toLocaleString() + ' of ' + d.total.toLocaleString() + ' shown</span></p>';
+  } else if(d.years && d.years.length && d.loading) h += '<div class="desc">Loading tickets…</div>';
+  box.innerHTML = h;
+}
+document.getElementById('ct-detail').addEventListener('click', e => {
+  if(e.target.closest('#ct-detail-close')){ ctDetail = null; renderCtDetail(); }
+  else if(e.target.closest('#ct-detail-more') && ctDetail && !ctDetail.loading) ctDetailMore();
+});
 
 function renderAll(){ renderCacheNote(); renderDashboard(); renderHome(); renderNewMoney(); renderDiscrepancies(); renderTimestampAnomalies(); renderCalendar(); renderStats(); renderChanges(); renderSelfPursue(); if(ctData) renderCompanyTiers(); }
 
@@ -5435,6 +5512,8 @@ document.getElementById('ct-mine').addEventListener('change', e => { ctUI.mine =
 document.getElementById('ct-unrated').addEventListener('change', e => { ctUI.unrated = e.target.checked; renderCompanyTiers(); });
 document.getElementById('ct-refresh').addEventListener('click', () => ctEnsureLoaded(true));
 document.getElementById('ct-table').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-ctname]');
+  if(tr && !e.target.closest('a')){ ctOpenDetail(tr.dataset.ctname); return; }
   const th = e.target.closest('th[data-ct]');
   if(!th) return;
   const k = th.dataset.ct;
