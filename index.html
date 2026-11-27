@@ -265,6 +265,9 @@
   .wx-icon{position:absolute; top:6px; right:8px; font-size:1.15em; line-height:1;}
   .cal-cell .d{color:var(--dim); font-weight:700; margin-bottom:4px;}
   .cal-cell .hrs{color:var(--blue2); font-weight:700;}
+  .cal-cell.has-score{padding-bottom:26px;}
+  .cal-cell .cal-score{position:absolute; right:6px; bottom:5px; line-height:1;}
+  .cal-cell .cal-score .tier{min-width:0; padding:2px 6px; font-size:.95em;}
   .cal-cell .rate{color:var(--orange2); font-weight:700;}
   .cal-cell.empty-day{opacity:.35;}
   .cal-head{color:var(--dim); font-size:.7em; text-transform:uppercase; text-align:center; padding-bottom:4px; font-weight:700;}
@@ -1228,6 +1231,11 @@ function ctLoose(k){
    AND GRANTE" ~ "...GRANITE", a name cut off mid-word). Conservative: both keys 10+ chars, same first 3 letters, identical digits
    (so "U-HAUL TITLING 1" and "2" stay apart), and either 1 edit (2 if both are 20+ chars) or the shorter (14+ chars) is a
    prefix of the longer. The heavier key (more tickets / filings) becomes the canonical one. weights: Map key -> weight. */
+/* Names several unrelated companies share — never prefix-merged on their own (join-key form). */
+const CT_GENERIC_NAMES = new Set(['INDUSTRIAL', 'ENVIRONMENTAL', 'DEPENDABLE', 'DIVERSIFIED', 'SCIENTIFIC', 'FIRSTCLASS', 'BROWNSTONE', 'UNIVERSAL',
+  'PREMIER', 'SUPERIOR', 'PRECISION', 'QUALITY', 'CERTIFIED', 'APPROVED', 'NATIONAL', 'AMERICAN', 'CITYWIDE', 'STATEWIDE', 'EMPIRESTATE',
+  'ADVANCED', 'ALLAMERICAN', 'ACCURATE', 'PROFESSIONAL', 'COMMERCIAL', 'RESIDENTIAL', 'METROPOLITAN', 'INTERNATIONAL', 'GENERAL', 'ELITE',
+  'CONSOLIDATED', 'INDEPENDENT', 'UNITEDSTATES', 'NORTHEAST', 'NORTHEASTERN', 'SOUTHERN', 'WESTERN', 'EASTERN', 'ATLANTIC', 'PACIFIC']);
 function ctLev(a, b, max){
   if(Math.abs(a.length - b.length) > max) return max + 1;
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -1255,6 +1263,18 @@ function ctCluster(weights){
       const ra = find(a), rb = find(b);
       if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); }
     }
+  }
+  // Pass 2: a SHORT name (10-13 chars, e.g. "JTC PAINTING") that is the prefix of a longer one ("JTC PAINTING DECORATING").
+  // Riskier than the 14+ char rule, so it needs the shorter name to be unambiguous: exactly ONE longer company starts with it
+  // (so "DEPENDABLE" -> two different Dependable companies is left alone) and it isn't a generic word several unrelated
+  // companies share ("INDUSTRIAL", "ENVIRONMENTAL", "FIRST CLASS"...).
+  for(const g of buckets.values()) for(const sh of g){
+    if(sh.length >= 14 || CT_GENERIC_NAMES.has(sh)) continue;
+    const roots = new Set();
+    for(const l of g) if(l !== sh && l.length > sh.length && l.startsWith(sh) && !/^SUPPL/.test(l.slice(sh.length)) && digits(l) === digits(sh)) roots.add(find(l));
+    if(roots.size !== 1) continue;
+    const ra = find(sh), rb = [...roots][0];
+    if(ra !== rb){ if(weights.get(ra) >= weights.get(rb)) parent.set(rb, ra); else parent.set(ra, rb); }
   }
   const out = new Map();
   for(const k of keys) out.set(k, find(k));
@@ -4015,7 +4035,7 @@ function calPeriodStats(byDay, inPeriod){
     const hours = inferHours(main);
     const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
     const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
-    P.dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length };
+    P.dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length, score: avgScore(entries) };
     P.hours += hours; P.est += est; P.received += received; P.filings += entries.length; P.overtime += overtime.length;
   }
   P.activeDayKeys = Object.keys(P.dayStats).filter(k => !isWeekendKey(k));
@@ -4111,7 +4131,7 @@ function renderCalendar(){
     if(!entries) return null;
     const { main, overtime } = splitAfterHours(entries);
     return { hours: inferHours(main), est: entries.reduce((a,x)=>a+expectedPayoutFor(x.rec),0),
-             received: entries.reduce((a,x)=>a+calReceivedFor(x.rec),0), count: entries.length, overtime: overtime.length };
+             received: entries.reduce((a,x)=>a+calReceivedFor(x.rec),0), count: entries.length, overtime: overtime.length, score: avgScore(entries) };
   };
   const cellHTML = (dateObj, spill) => {
     const key = localDayKey(dateObj);
@@ -4136,10 +4156,11 @@ function renderCalendar(){
     const hoursLine = st && st.hours > 0
       ? `<div class="sub2 hrs">${st.hours.toFixed(1)}h${st.overtime?` +${st.overtime}OT`:''}</div>`
       : (st && st.overtime ? `<div class="sub2 hrs">${st.overtime} overtime truck${st.overtime===1?'':'s'}</div>` : '');
-    return `<div class="cal-cell${sel}${spill?' spill':''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
+    return `<div class="cal-cell${sel}${spill?' spill':''}${st && st.score != null ? ' has-score' : ''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
       <span class="wx-icon"></span>
       <div class="d">${dateObj.getDate()}<span class="wx"></span></div>
       ${st ? `<div class="cnt">${st.count}</div>${hoursLine}${rate!=null?`<div class="sub2 rate">$${rate}/hr</div>`:''}<div class="sub2">est ${moneyShort(st.est)}</div><div class="sub2">rec'd ${moneyShort(st.received)}</div>` : ''}
+      ${st && st.score != null ? `<div class="cal-score" title="Average company score of the day's filings (1–10)"><span class="tier tier-${ctScoreClass(st.score)}">${st.score.toFixed(1)}</span></div>` : ''}
     </div>`;
   };
 
@@ -4218,18 +4239,20 @@ function renderCalendar(){
         <div class="stat-card"><div class="label">Hours</div><div class="value blue">${s.hours.toFixed(1)}</div><div class="sub">main shift only</div></div>
         ${s.overtime ? `<div class="stat-card"><div class="label">Overtime Trucks</div><div class="value orange">${s.overtime}</div><div class="sub">before 5am/after 6pm or weekend</div></div>` : ''}
         <div class="stat-card"><div class="label">Estimated Total</div><div class="value orange">${money(s.est)}</div></div>
+        ${s.score != null ? `<div class="stat-card"><div class="label">Avg Company Score</div><div class="value blue">${s.score.toFixed(1)}</div><div class="sub">1–10, ${entries.length} filing${entries.length===1?'':'s'}</div></div>` : ''}
         <div class="stat-card"><div class="label">Received</div><div class="value success">${money(s.received)}</div><div class="sub">${s.est>0 ? (s.received/s.est*100).toFixed(0)+'% collected' : '—'}</div></div>
         <div class="stat-card"><div class="label">Still Outstanding</div><div class="value danger">${money(outstanding)}</div></div>
       </div>
       <div id="cal-map"></div>` +
       entries.map(e => {
-        const r = e.rec;
+        const r = e.rec, sc = recScore(r);
         return `<div class="chg-item">
           <div class="when">${e.from.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}${(e.to>e.from)?'–'+e.to.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):''}</div>
           <div class="what">
             ${datasetBadge(r.dataset)}
             <span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>
             ${r.offense>1?`<span class="badge disq">${r.offense===2?'2nd':'3rd'} offense</span>`:''}
+            ${sc ? `<span class="tier tier-${ctScoreClass(sc.score)}" title="${esc(sc.why)} · est ${money(sc.ev)} per filing">${sc.score}</span>` : ''}
             <b>${summonsLink(r.summons, 'Complaint ' + r.complaintNumber)}</b> · ${esc(r.company)}
             <span class="delta"> — est ${money(expectedPayoutFor(r))}${calReceivedFor(r)?', received '+money(calReceivedFor(r)):''}</span>
           </div>
@@ -5065,8 +5088,25 @@ async function ctLoadScores(){
     const res = await fetchWithTimeout('company_scores.json?v=' + Date.now(), 20000);
     if(!res.ok) return;
     const j = await res.json();
-    if(j && j.companies && j.bands){ ctScores = j; if(!ctUI.sortChosen){ ctUI.sort = 'sev'; ctUI.dir = -1; } renderCompanyTiers(); }
+    if(j && j.companies && j.bands){ ctScores = j; recScoreMemo.clear(); if(!ctUI.sortChosen){ ctUI.sort = 'sev'; ctUI.dir = -1; } renderCompanyTiers(); if(appData && appData.merged && appData.merged.length) renderCalendar(); }
   }catch(e){ /* no scores file — fine */ }
+}
+function ctScoreClass(sc){ return sc >= 8 ? 'S' : sc >= 6 ? 'A' : sc >= 4 ? 'B' : sc >= 2 ? 'C' : 'D'; }
+/* Company score for ONE filing (Calendar etc.): the scores file holds every spelling of every company you've filed on,
+   so the stage-1 join key finds it directly; a name that isn't in the file gets the no-data estimate. null until the file loads. */
+const recScoreMemo = new Map();
+function recScore(rec){
+  if(!ctScores) return null;
+  const k = ctLoose(ctKey(rec.company));
+  if(!k) return null;
+  let v = recScoreMemo.get(k);
+  if(!v){ v = ctScoreFor([k], null); recScoreMemo.set(k, v); }
+  return v;
+}
+function avgScore(entries){
+  let n = 0, t = 0;
+  for(const e of entries){ const v = recScore(e.rec); if(v){ n++; t += v.score; } }
+  return n ? t / n : null;
 }
 function ctBand(ev){ let sc = 1; for(const b of ctScores.bands) if(ev >= b) sc++; return sc; }
 function ctScoreFor(rawKeys, c){
@@ -5449,6 +5489,7 @@ if(isFileProtocol){
   } else {
     setStatus('Loading…', true);
   }
+  ctLoadScores();   // company scores (company_scores.json) — the Calendar shows them too, so load at boot, not just with the Company Tiers tab
   loadAllData(!!appData.merged.length).catch(e => {
     console.error(e);
     setStatus('Refresh failed — showing last known data', false);
