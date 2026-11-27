@@ -520,6 +520,10 @@
       <div class="weekday-avg" id="cal-weekday-avg"></div>
       <div class="cal-drill" id="cal-drill" style="display:none;"></div>
     </div>
+    <div class="panel" id="cal-place-panel">
+      <h2>Place Value <span class="tag">what a filing is worth by borough &amp; plate</span></h2>
+      <div id="cal-place-body"></div>
+    </div>
     <div class="panel" id="cal-ytd-panel">
       <h2>Year to Date <span class="tag" id="cal-ytd-label"></span></h2>
       <div class="grid" id="cal-ytd-stats" style="margin-bottom:0;"></div>
@@ -4035,7 +4039,7 @@ function calPeriodStats(byDay, inPeriod){
     const hours = inferHours(main);
     const est = entries.reduce((s,x)=>s+expectedPayoutFor(x.rec),0);
     const received = entries.reduce((s,x)=>s+calReceivedFor(x.rec),0);
-    P.dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length, score: avgScore(entries) };
+    P.dayStats[key] = { hours, est, received, count: entries.length, overtime: overtime.length, val: dayComposition(entries) };
     P.hours += hours; P.est += est; P.received += received; P.filings += entries.length; P.overtime += overtime.length;
   }
   P.activeDayKeys = Object.keys(P.dayStats).filter(k => !isWeekendKey(k));
@@ -4116,6 +4120,7 @@ function renderCalendar(){
   const ytdThrough = y < curYear ? 'full year' : 'Jan 1 – ' + new Date(y, +todayKey.slice(5,7)-1, +todayKey.slice(8,10)).toLocaleString(undefined,{month:'short', day:'numeric'});
   document.getElementById('cal-ytd-label').textContent = y + ' · ' + ytdThrough;
   document.getElementById('cal-ytd-stats').innerHTML = calStatCardsHTML(YP, lyYtd, y < curYear ? String(y-1) : 'YTD ' + (y-1), 'Year');
+  { const pb = document.getElementById('cal-place-body'); if(pb) pb.innerHTML = placeValueHTML(byDayAll); }
 
   const heads = document.getElementById('cal-heads');
   heads.innerHTML = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-head">${d}</div>`).join('') + '<div class="cal-head">Week</div>';
@@ -4131,7 +4136,7 @@ function renderCalendar(){
     if(!entries) return null;
     const { main, overtime } = splitAfterHours(entries);
     return { hours: inferHours(main), est: entries.reduce((a,x)=>a+expectedPayoutFor(x.rec),0),
-             received: entries.reduce((a,x)=>a+calReceivedFor(x.rec),0), count: entries.length, overtime: overtime.length, score: avgScore(entries) };
+             received: entries.reduce((a,x)=>a+calReceivedFor(x.rec),0), count: entries.length, overtime: overtime.length, val: dayComposition(entries) };
   };
   const cellHTML = (dateObj, spill) => {
     const key = localDayKey(dateObj);
@@ -4156,11 +4161,11 @@ function renderCalendar(){
     const hoursLine = st && st.hours > 0
       ? `<div class="sub2 hrs">${st.hours.toFixed(1)}h${st.overtime?` +${st.overtime}OT`:''}</div>`
       : (st && st.overtime ? `<div class="sub2 hrs">${st.overtime} overtime truck${st.overtime===1?'':'s'}</div>` : '');
-    return `<div class="cal-cell${sel}${spill?' spill':''}${st && st.score != null ? ' has-score' : ''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
+    return `<div class="cal-cell${sel}${spill?' spill':''}${st && st.val ? ' has-score' : ''}" data-date="${key}" ${st ? `data-day="${key}"` : ''} ${tint}>
       <span class="wx-icon"></span>
       <div class="d">${dateObj.getDate()}<span class="wx"></span></div>
       ${st ? `<div class="cnt">${st.count}</div>${hoursLine}${rate!=null?`<div class="sub2 rate">$${rate}/hr</div>`:''}<div class="sub2">est ${moneyShort(st.est)}</div><div class="sub2">rec'd ${moneyShort(st.received)}</div>` : ''}
-      ${st && st.score != null ? `<div class="cal-score" title="Average company score of the day's filings (1–10)"><span class="tier tier-${ctScoreClass(st.score)}">${st.score.toFixed(1)}</span></div>` : ''}
+      ${st && st.val ? `<div class="cal-score" title="Day value: expected $ per filing from the day's mix of companies and offense tiers (${(st.val.rep*100).toFixed(0)}% repeat offenses, ${(st.val.out*100).toFixed(0)}% out-of-state plates)"><span class="tier tier-${dayValueClass(st.val.ev)}">$${Math.round(st.val.ev)}</span></div>` : ''}
     </div>`;
   };
 
@@ -4239,7 +4244,7 @@ function renderCalendar(){
         <div class="stat-card"><div class="label">Hours</div><div class="value blue">${s.hours.toFixed(1)}</div><div class="sub">main shift only</div></div>
         ${s.overtime ? `<div class="stat-card"><div class="label">Overtime Trucks</div><div class="value orange">${s.overtime}</div><div class="sub">before 5am/after 6pm or weekend</div></div>` : ''}
         <div class="stat-card"><div class="label">Estimated Total</div><div class="value orange">${money(s.est)}</div></div>
-        ${s.score != null ? `<div class="stat-card"><div class="label">Avg Company Score</div><div class="value blue">${s.score.toFixed(1)}</div><div class="sub">1–10, ${entries.length} filing${entries.length===1?'':'s'}</div></div>` : ''}
+        ${s.val ? `<div class="stat-card"><div class="label">Day Value</div><div class="value blue">${money(s.val.ev)}</div><div class="sub">expected per filing · ${measureMean() ? (100*s.val.ev/measureMean()).toFixed(0)+'% of your average' : ''}${s.hours > 0 ? ' · ' + money(s.val.total / s.hours) + '/hr' : ''}</div></div><div class="stat-card"><div class="label">Day Mix</div><div class="value blue">${(s.val.rep*100).toFixed(0)}% repeat</div><div class="sub">${(s.val.out*100).toFixed(0)}% out-of-state plates · ${(s.val.big*100).toFixed(0)}% big cos · ${(s.val.small*100).toFixed(0)}% small/unknown</div></div>` : ''}
         <div class="stat-card"><div class="label">Received</div><div class="value success">${money(s.received)}</div><div class="sub">${s.est>0 ? (s.received/s.est*100).toFixed(0)+'% collected' : '—'}</div></div>
         <div class="stat-card"><div class="label">Still Outstanding</div><div class="value danger">${money(outstanding)}</div></div>
       </div>
@@ -4252,7 +4257,7 @@ function renderCalendar(){
             ${datasetBadge(r.dataset)}
             <span class="badge ${bucketBadgeClass(r._rowType)}">${bucketLabel(r._rowType)}</span>
             ${r.offense>1?`<span class="badge disq">${r.offense===2?'2nd':'3rd'} offense</span>`:''}
-            ${sc ? `<span class="tier tier-${ctScoreClass(sc.score)}" title="${esc(sc.why)} · est ${money(sc.ev)} per filing">${sc.score}</span>` : ''}
+            ${sc ? `<span class="tier tier-${ctScoreClass(sc.score)}" title="${esc(sc.why)} · company score ${sc.score}/10">${recMeasure(r) ? money(recMeasure(r).ev) : sc.score}</span>` : ''}
             <b>${summonsLink(r.summons, 'Complaint ' + r.complaintNumber)}</b> · ${esc(r.company)}
             <span class="delta"> — est ${money(expectedPayoutFor(r))}${calReceivedFor(r)?', received '+money(calReceivedFor(r)):''}</span>
           </div>
@@ -5103,10 +5108,66 @@ function recScore(rec){
   if(!v){ v = ctScoreFor([k], null); recScoreMemo.set(k, v); }
   return v;
 }
-function avgScore(entries){
-  let n = 0, t = 0;
-  for(const e of entries){ const v = recScore(e.rec); if(v){ n++; t += v.score; } }
-  return n ? t / n : null;
+/* ---- Day / place value: expected $ per filing, priced from evidence (validated pieces; see CLAUDE.md "Day / place value") ----
+   E[$ | filing] = (1 - P(DQ)) x P(company pays) x payout(offense tier)
+   P(DQ) = ctScores.dqBase (~6.3%), P(pays) = the company's NYC idling paid share (company_scores.json, index 8; 67% for a company
+   with no record), payout = 25% (50% self-pursued) of the average penalty on tickets that end up paid: $544 / $735 / $922. */
+const MEASURE_PENALTY = { 1: 544, 2: 735, 3: 922 };
+function boroOf(r){
+  let b = '';   // the borough lives in the row's extra columns (header "Borough of Occurrence")
+  if(r._extra) for(const k of Object.keys(r._extra)){ if(normKey(k).includes('boro')){ b = String(r._extra[k] || '').toUpperCase(); if(b) break; } }
+  return /MANH/.test(b) ? 'Manhattan' : /BRONX/.test(b) ? 'Bronx' : /BROOK/.test(b) ? 'Brooklyn' : /QUEEN/.test(b) ? 'Queens' : /STATEN/.test(b) ? 'Staten Island' : 'Unknown';
+}
+function recMeasure(rec){
+  if(!ctScores) return null;
+  const k = ctLoose(ctKey(rec.company)), e = k ? ctScores.companies[k] : null;
+  const paidShare = e && e[8] != null ? e[8] : 0.67, iN = e && e[7] != null ? e[7] : 0;
+  const tier = rec.offense || 1, st = String(rec.licenseState || '').toUpperCase().trim();
+  return { ev: (1 - (ctScores.dqBase || 0.063)) * paidShare * computePayout(MEASURE_PENALTY[tier] || MEASURE_PENALTY[1], rec), tier, out: !!st && st !== 'NY', iN, paidShare };
+}
+function dayComposition(entries){
+  if(!ctScores) return null;
+  let n = 0, total = 0, rep = 0, out = 0, big = 0, small = 0;
+  for(const e of entries){ const m = recMeasure(e.rec); if(!m) continue; n++; total += m.ev; if(m.tier > 1) rep++; if(m.out) out++; if(m.iN >= 500) big++; else if(m.iN < 5) small++; }
+  return n ? { n, total, ev: total / n, rep: rep / n, out: out / n, big: big / n, small: small / n } : null;
+}
+let measureMeanMemo = { n: -1, v: 0 };
+function measureMean(){
+  if(measureMeanMemo.n !== appData.merged.length || measureMeanMemo.s !== ctScores){
+    let t = 0, c = 0; for(const r of appData.merged){ const m = recMeasure(r); if(m){ t += m.ev; c++; } }
+    measureMeanMemo = { n: appData.merged.length, s: ctScores, v: c ? t / c : 0 };
+  }
+  return measureMeanMemo.v;
+}
+function dayValueClass(ev){ const r = measureMean() ? ev / measureMean() : 1; return r >= 1.15 ? 'S' : r >= 1.0 ? 'A' : r >= 0.85 ? 'B' : r >= 0.7 ? 'C' : 'D'; }
+/* Place table on the Calendar tab: composition-priced expected $ by borough x plate (last 12 months of filings) and by day type. */
+function placeValueHTML(byDayAll){
+  if(!ctScores) return '<div class="empty">Needs company_scores.json (loads at start).</div>';
+  const cut = Date.now() - 365 * 86400000, G = new Map(), mean0 = measureMean();
+  for(const key of Object.keys(byDayAll)) for(const e of byDayAll[key]){
+    if(e.from.getTime() < cut) continue;
+    const m = recMeasure(e.rec); if(!m) continue;
+    const g = boroOf(e.rec) + ' · ' + (m.out ? 'out-of-state plate' : 'NY plate');
+    const o = G.get(g) || { n: 0, ev: 0, rep: 0, small: 0 }; o.n++; o.ev += m.ev; if(m.tier > 1) o.rep++; if(m.iN < 5) o.small++; G.set(g, o);
+  }
+  const manNY = G.get('Manhattan · NY plate'), base = manNY && manNY.n >= 20 ? manNY.ev / manNY.n : mean0;
+  const rows1 = [...G].filter(([, o]) => o.n >= 10).sort((a, b) => b[1].n - a[1].n).map(([g, o]) =>
+    `<tr><td>${esc(g)}</td><td class="num">${o.n.toLocaleString()}</td><td class="num">${(100 * o.rep / o.n).toFixed(0)}%</td><td class="num">${(100 * o.small / o.n).toFixed(0)}%</td><td class="num"><b>${money(o.ev / o.n)}</b></td><td class="num">${base ? (100 * (o.ev / o.n) / base).toFixed(0) + '%' : '—'}</td></tr>`).join('');
+  const T = new Map();
+  for(const key of Object.keys(byDayAll)){
+    const entries = byDayAll[key]; if(entries.length < 6) continue;
+    const hours = inferHours(splitAfterHours(entries).main); if(hours < 1.5) continue;
+    const cnt = {}; entries.forEach(e => { const b = boroOf(e.rec); cnt[b] = (cnt[b] || 0) + 1; });
+    const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0], type = cnt[top] / entries.length >= 0.8 ? top : 'Mixed';
+    const c = dayComposition(entries); if(!c) continue;
+    const o = T.get(type) || { days: 0, tph: 0, evf: 0, eph: 0 }; o.days++; o.tph += entries.length / hours; o.evf += c.ev; o.eph += c.total / hours; T.set(type, o);
+  }
+  const rows2 = [...T].filter(([, o]) => o.days >= 3).sort((a, b) => b[1].days - a[1].days).map(([t, o]) =>
+    `<tr><td>${esc(t)} days</td><td class="num">${o.days}</td><td class="num">${(o.tph / o.days).toFixed(1)}</td><td class="num">${money(o.evf / o.days)}</td><td class="num"><b>${money(o.eph / o.days)}</b></td></tr>`).join('');
+  return `<p class="desc">Expected dollars per filing = (1 − DQ chance) × (the company's chance of paying) × payout for the offense tier. It prices <b>what a filing is worth</b>; how many trucks you get per hour is a separate, usually bigger lever — see the second table.</p>
+    <div class="table-wrap"><table><thead><tr><th>Place · plate (last 12 months)</th><th class="num">Filings</th><th class="num">Repeat offense</th><th class="num">Small / unknown cos</th><th class="num">Expected $ / filing</th><th class="num">vs Manhattan NY plate</th></tr></thead><tbody>${rows1 || '<tr><td colspan="6">Not enough filings with a borough yet.</td></tr>'}</tbody></table></div>
+    <div class="table-wrap" style="margin-top:10px;"><table><thead><tr><th>Day type (80%+ in one borough)</th><th class="num">Days</th><th class="num">Filings / hour</th><th class="num">Expected $ / filing</th><th class="num">Expected $ / hour</th></tr></thead><tbody>${rows2 || '<tr><td colspan="5">Not enough full days yet.</td></tr>'}</tbody></table></div>
+    <p class="note">Validated on your closed-out days: a day's realized $/hour tracks filings per hour (rank corr 0.72) far more than $ per filing (0.37), and a single day's $/filing is mostly luck (~19 filings/day). The composition part (tier, company) is priced from NYC and payout rules because your day-level outcomes are ~99% first-offense Manhattan.</p>`;
 }
 function ctBand(ev){ let sc = 1; for(const b of ctScores.bands) if(ev >= b) sc++; return sc; }
 function ctScoreFor(rawKeys, c){
