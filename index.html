@@ -3179,11 +3179,11 @@ function spImageUrl(s){ return 'https://a820-ecbticketfinder.nyc.gov/GetViolatio
 function spExportData(views, me, dateStr){
   const rows = views.filter(v => v.paid && v.c.summons && !v.requested);
   const money2 = n => '$' + (Math.round(n * 100) / 100).toFixed(2);
-  const subject = 'Complaint Payment ' + dateStr + ' - SELF-PURSUED, I receive 50% of the penalty (' + rows.length + ' summons' + (rows.length === 1 ? '' : 'es') + ')';
-  const lines = rows.map(v => v.c.summons + (v.c.company ? ' — ' + v.c.company : '') + ' — penalty collected ' + money2(spPenaltyCollected(v.o)) + ' — my 50% share ' + money2(v.share));
-  const body = 'Hello, I am the citizen petitioner who pursued the following ' + (rows.length === 1 ? 'summons' : 'summonses') + ' at OATH myself under the Citizens Air Complaint Program. ' +
-    (rows.length === 1 ? 'It has' : 'They have') + ' been paid. Because I pursued ' + (rows.length === 1 ? 'it' : 'them') + ' directly, my share is 50% of the penalty collected (not the usual 25%), excluding late fees.\n\n' +
-    lines.join('\n') + '\n\nTotal share due to me: ' + money2(rows.reduce((t, v) => t + v.share, 0)) + '\n\n' + me.name + '\nMailing address: ' + me.address;
+  const one = rows.length === 1;
+  const subject = 'Complaint Payment ' + dateStr + ' - Self-Pursued, I get 50%';
+  const body = 'Hello, I am the citizen who submitted the complaint for the following paid ' + (one ? 'summons' : 'summonses') +
+    ' through the Citizens Air Complaint Program. I pursued ' + (one ? 'it' : 'them') + ' at OATH myself, so I receive 50% of the penalty:\n\n' +
+    'Vendor Code: ' + (me.code || '') + '\n' + me.name + '\nMailing address: ' + me.address + '\n\n' + rows.map(v => v.c.summons).join('\n');
   const images = rows.map(v => v.c.summons + '  ' + spImageUrl(v.c.summons)).join('\n');
   return { rows, to: SP_PAYOUT_EMAIL, subject, body, images, count: rows.length, total: rows.reduce((t, v) => t + v.share, 0) };
 }
@@ -3529,7 +3529,7 @@ function spLoadJSON(key, fallback){ try{ return JSON.parse(localStorage.getItem(
 function spSaveJSON(key, v){ try{ localStorage.setItem(key, JSON.stringify(v)); }catch(e){} }
 function spMe(){
   const v = (CFG.vendors && CFG.vendors.atnyc) || {};
-  return { name: v.name || 'Alexander Traynor', address: v.address || '374 Monaco Ln, Glastonbury, CT 06033' };
+  return { code: v.code || '', name: v.name || 'Alexander Traynor', address: v.address || '374 Monaco Ln, Glastonbury, CT 06033' };
 }
 function spViews(){
   const sp = appData.sp || {};
